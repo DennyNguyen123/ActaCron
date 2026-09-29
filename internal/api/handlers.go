@@ -50,12 +50,15 @@ func (h *APIHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":         "ok",
-		"uptime_seconds": uptime,
-		"memory_alloc_mb": fmt.Sprintf("%.2f MB", allocMB),
-		"memory_sys_mb":   fmt.Sprintf("%.2f MB", sysMB),
+		"status":           "ok",
+		"uptime_seconds":   uptime,
+		"uptime_sec":       uptime,
+		"memory_mb":        fmt.Sprintf("%.1f", allocMB),
+		"memory_alloc_mb":  fmt.Sprintf("%.2f MB", allocMB),
+		"memory_sys_mb":    fmt.Sprintf("%.2f MB", sysMB),
+		"active_jobs":      jobsCount,
 		"active_cron_jobs": jobsCount,
-		"timestamp":      time.Now().Format(time.RFC3339),
+		"timestamp":        time.Now().Format(time.RFC3339),
 	})
 }
 

@@ -107,7 +107,7 @@ func (m *Manager) Reload() error {
 				}
 
 				meta.Package = pkgName
-				meta.FilePath = filePath
+				meta.FilePath = file.Name()
 
 				// Query enabled state from DB
 				if m.db != nil {
@@ -193,6 +193,7 @@ func (m *Manager) GetFunctionCode(key string) (string, error) {
 }
 
 func (m *Manager) SaveFunctionCode(pkgName, funcFileName, code string) error {
+	funcFileName = filepath.Base(funcFileName)
 	// First validate syntax with AST parser
 	_, err := parser.Parse(code, funcFileName)
 	if err != nil {

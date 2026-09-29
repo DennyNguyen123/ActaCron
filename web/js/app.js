@@ -110,9 +110,12 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      document.getElementById("headerRam").textContent = data.memory_mb + " MB";
-      document.getElementById("headerCrons").textContent = data.active_jobs || 0;
-      document.getElementById("statRam").textContent = data.memory_mb + " MB";
+      let ram = data.memory_mb || data.memory_alloc_mb || "--";
+      if (!String(ram).includes("MB")) ram = ram + " MB";
+
+      document.getElementById("headerRam").textContent = ram;
+      document.getElementById("headerCrons").textContent = data.active_jobs ?? data.active_cron_jobs ?? 0;
+      document.getElementById("statRam").textContent = ram;
     } catch (_) {}
   }
 
@@ -296,6 +299,7 @@
   async function saveCurrentScript() {
     if (!activeScript) return;
     const content = document.getElementById("scriptEditor").value;
+    const filename = (activeScript.name.endsWith(".js") ? activeScript.name : activeScript.name + ".js");
 
     try {
       const res = await fetch("/api/functions/save", {
@@ -303,7 +307,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           package: activeScript.package,
-          filename: activeScript.file_path,
+          filename: filename,
           code: content
         })
       });

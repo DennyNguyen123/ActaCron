@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,13 +25,14 @@ import (
 )
 
 func main() {
-	// Base directories
+	// Base directories: if running under 'go run' (temp go-build), use current working directory
+	cwd, _ := os.Getwd()
 	execDir, err := os.Executable()
 	var appDir string
-	if err == nil {
+	if err == nil && !strings.Contains(execDir, "go-build") {
 		appDir = filepath.Dir(execDir)
 	} else {
-		appDir, _ = os.Getwd()
+		appDir = cwd
 	}
 
 	packagesDir := filepath.Join(appDir, "packages")
