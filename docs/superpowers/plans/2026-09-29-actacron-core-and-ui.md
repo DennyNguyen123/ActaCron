@@ -1128,12 +1128,13 @@ git commit -m "feat(api): implement REST API endpoints for packages, functions, 
 
 ---
 
-### Task 12: Embedded Web Dashboard & UI Config (UI-UX-Pro-Max Dark OLED)
+### Task 12: Embedded Web Dashboard, UI Config & i18n (UI-UX-Pro-Max Dark OLED)
 
 **Files:**
 - Create: `web/index.html`
 - Create: `web/css/style.css`
 - Create: `web/js/app.js`
+- Create: `web/js/i18n.js`
 - Create: `web/embed.go`
 - Test: `web/embed_test.go`
 
@@ -1157,6 +1158,10 @@ func TestEmbeddedFiles(t *testing.T) {
 	if err != nil || len(data) == 0 {
 		t.Fatalf("expected index.html to be embedded, got err: %v", err)
 	}
+	i18nData, err := web.Assets.ReadFile("js/i18n.js")
+	if err != nil || len(i18nData) == 0 {
+		t.Fatalf("expected js/i18n.js to be embedded, got err: %v", err)
+	}
 }
 ```
 
@@ -1165,7 +1170,7 @@ func TestEmbeddedFiles(t *testing.T) {
 Run: `go test ./web/... -v`
 Expected: FAIL
 
-- [ ] **Step 3: Build the Dark OLED UI Dashboard with Theme Customization**
+- [ ] **Step 3: Build the Dark OLED UI Dashboard with Theme Customization & i18n**
 
 1. `web/embed.go`:
 ```go
@@ -1177,7 +1182,13 @@ import "embed"
 var Assets embed.FS
 ```
 
-2. `web/css/style.css`:
+2. `web/js/i18n.js`:
+Lightweight translation dictionary:
+- Default: `en` (English)
+- Secondary: `vi` (Vietnamese)
+- Covers: Navigation tabs, button labels, modal headers, settings explanations, and a natural language Cron translator (`cronToString(expr, lang)`).
+
+3. `web/css/style.css`:
 Implement Master tokens from `design-system/actacron/MASTER.md`:
 - CSS Variables: `--color-background: #0F172A`, `--color-card: #1B2336`, `--color-border: #334155`, `--color-accent: #22C55E`, `--color-destructive: #EF4444`, `--color-muted: #94A3B8`.
 - Dynamic Customization tokens:
@@ -1188,19 +1199,19 @@ Implement Master tokens from `design-system/actacron/MASTER.md`:
 - Log table with quick chips filter and slide-in drawer.
 - Settings Screen layout: 4 tabs (General, Git, Environment Variables, UI & Appearance).
 
-3. `web/index.html`:
+4. `web/index.html`:
 - Semantic layout: Sidebar Navigation (Overview, Workspace, Logs, MCP Hub, Settings).
-- Top header metrics: System status badge, RAM usage, active cron countdown, Sync All button.
+- Top header metrics: System status badge, RAM usage, active cron countdown, Language Switcher `[🌐 EN | VI]`, Sync All button.
 - Workspace: Tree view, Code editor with live metadata chips, Inspector with Test Runner & Schedule toggle.
 - Settings Screen:
   - Tab 1: General (Port, Timeout, Log Retention, Run on Startup switch, Allow Shell switch).
   - Tab 2: Git Credentials (Author Name, Author Email, Token).
   - Tab 3: Environment (.env Key-Value Editor with mask toggle).
-  - Tab 4: UI & Appearance (Accent color picker, density scale selector, editor font size).
+  - Tab 4: UI & Appearance (Language selector, Accent color picker, density scale selector, editor font size).
 
-4. `web/js/app.js`:
+5. `web/js/app.js`:
 - Client-side router for tabs.
-- Dynamic theme injector: applies `data-theme`, `data-density`, and font size immediately upon selection and syncs with `/api/settings`.
+- Dynamic theme and language injector: applies `data-theme`, `data-density`, and active language immediately and syncs with `/api/settings`.
 - Code editor with syntax coloring, line numbers, and keyboard shortcuts (`Ctrl+S`, `Ctrl+Enter`).
 - Real-time test runner and live logs viewer.
 
@@ -1212,8 +1223,8 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add web/index.html web/css/style.css web/js/app.js web/embed.go web/embed_test.go
-git commit -m "feat(ui): implement embedded Dark OLED 3-pane dashboard with full App Settings and UI theme config"
+git add web/index.html web/css/style.css web/js/app.js web/js/i18n.js web/embed.go web/embed_test.go
+git commit -m "feat(ui): implement embedded Dark OLED dashboard with App Settings, UI theme config, and i18n (en/vi)"
 ```
 
 ---
@@ -1378,4 +1389,102 @@ Expected: PASS
 git add tests/e2e/e2e_test.go
 git commit -m "test(e2e): add end-to-end integration test validating engine, settings, storage, and metadata"
 ```
+
+---
+
+### Task 15: Release Build & Distribution Packaging
+
+**Files:**
+- Create: `scripts/build.ps1`
+- Create: `.env.example`
+- Create: `packages/demo-pack/check_health.js`
+- Create: `packages/demo-pack/math_tool.js`
+
+**Interfaces:**
+- Consumes: Production Go compiler
+- Produces: `dist/ActaCron-v1.0.0-windows-amd64.zip` containing standalone portable application
+
+- [ ] **Step 1: Create build and release script**
+
+Create `scripts/build.ps1`:
+```powershell
+$ErrorActionPreference = "Stop"
+Write-Host "Building ActaCron Production Release..." -ForegroundColor Cyan
+
+# Clean dist
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist
+New-Item -ItemType Directory -Path "dist/ActaCron-v1.0.0-windows-amd64" | Out-Null
+New-Item -ItemType Directory -Path "dist/ActaCron-v1.0.0-windows-amd64/packages/demo-pack" | Out-Null
+
+# Compile with GUI flag (no black console window) and stripped symbols (< 16MB)
+go build -ldflags "-H windowsgui -s -w" -o "dist/ActaCron-v1.0.0-windows-amd64/actacron.exe" .
+
+# Copy documentation and sample files
+Copy-Item ".env.example" "dist/ActaCron-v1.0.0-windows-amd64/.env.example"
+Copy-Item "README.md" "dist/ActaCron-v1.0.0-windows-amd64/README.md" -ErrorAction SilentlyContinue
+Copy-Item -Recurse "packages/demo-pack/*" "dist/ActaCron-v1.0.0-windows-amd64/packages/demo-pack/"
+
+# Compress into portable zip
+Compress-Archive -Path "dist/ActaCron-v1.0.0-windows-amd64" -DestinationPath "dist/ActaCron-v1.0.0-windows-amd64.zip"
+
+Write-Host "Release created successfully: dist/ActaCron-v1.0.0-windows-amd64.zip" -ForegroundColor Green
+```
+
+- [ ] **Step 2: Create sample .env.example and starter demo scripts**
+
+Create `.env.example`:
+```ini
+# ActaCron Global Configuration
+PORT=8080
+TIMEOUT_SECONDS=30
+LOG_RETENTION_DAYS=7
+ALLOW_SHELL=false
+
+# Secrets & Custom API Keys
+# TELEGRAM_BOT_TOKEN=
+# DISCORD_WEBHOOK_URL=
+```
+
+Create `packages/demo-pack/check_health.js`:
+```javascript
+/**
+ * @name check_health
+ * @description Periodic system uptime and health check
+ * @cron */30 * * * *
+ * @mcp false
+ */
+function main() {
+    console.log("Health check executed at:", new Date().toISOString());
+    return { status: "healthy", timestamp: Date.now() };
+}
+```
+
+Create `packages/demo-pack/math_tool.js`:
+```javascript
+/**
+ * @name add_numbers
+ * @description Adds two numbers together
+ * @mcp true
+ * @param {number} a - First number
+ * @param {number} b - Second number
+ */
+function main(params) {
+    const a = (params && params.a) || 0;
+    const b = (params && params.b) || 0;
+    return { result: a + b };
+}
+```
+
+- [ ] **Step 3: Execute build script and verify release**
+
+Run: `powershell -ExecutionPolicy Bypass -File scripts/build.ps1`
+Expected: Generates `dist/ActaCron-v1.0.0-windows-amd64.zip` with `actacron.exe` under 20MB.
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git add scripts/build.ps1 .env.example packages/demo-pack/check_health.js packages/demo-pack/math_tool.js
+git commit -m "chore(release): add production build script, starter package, and packaging automation"
+```
+
 

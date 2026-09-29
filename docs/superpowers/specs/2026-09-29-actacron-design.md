@@ -332,6 +332,7 @@ The interface uses a **3-Pane IDE Layout** within a clean Windows App Window:
      - Two-way sync with root `.env` file.
    - **Tab 4: UI & Appearance (UI-UX-Pro-Max Theme Configuration):**
      - Master design system: `design-system/actacron/MASTER.md`.
+     - **Language / i18n:** English (Default) and Vietnamese (Secondary). 1-click toggle `🌐 EN | VI` in header & settings. Translates UI labels, status messages, and natural language Cron explanations (e.g. "Every 15 minutes" / "Chạy mỗi 15 phút").
      - Theme Accent Color: Emerald Run Green (`#22C55E`, default), Electric Blue (`#38BDF8`), Violet (`#A855F7`).
      - UI Density Scale: Compact (`8-32px`), Balanced (`16-64px`), Spacious (`24-96px`).
      - Code Editor Font Size: `12px`, `14px`, `16px`.
@@ -366,7 +367,29 @@ The interface uses a **3-Pane IDE Layout** within a clean Windows App Window:
 
 ---
 
-## 11. Security & Guardrails
+## 11. Packaging & Release Distribution
+
+1. **Production Binary Optimization:**
+   - Command: `go build -ldflags "-H windowsgui -s -w" -o actacron.exe .`
+   - `-H windowsgui`: Suppresses the Windows command console window (no black terminal box), cleanly launching directly into the System Tray with Edge App on-demand.
+   - `-s -w`: Strips debug information and symbol tables, reducing binary size to **~14-16MB**.
+2. **Windows Resource Icon:**
+   - Embeds native Windows icon (`.ico`) into the executable for File Explorer and Taskbar polish.
+3. **Release Bundle Structure (Portable ZIP):**
+   ```text
+   ActaCron-v1.0.0-windows-amd64/
+   ├── actacron.exe             # Standalone binary with embedded UI & icons
+   ├── .env.example             # Documented template for environment secrets
+   ├── README.md                # Quick-start guide, shortcuts, MCP config snippet
+   └── packages/                # Sample starter package
+       └── demo-pack/
+           ├── check_health_cron.js   # Sample periodic cron job
+           └── math_mcp_tool.js       # Sample MCP tool for LLMs
+   ```
+
+---
+
+## 12. Security & Guardrails
 
 1. **Execution Timeout:** Hard limit of 30 seconds (configurable) per function call via `context.WithTimeout` to neutralize infinite loops.
 2. **Call Stack Limit:** Max depth of 10 for cross-function `call()` to block cyclic recursion deadlocks.
