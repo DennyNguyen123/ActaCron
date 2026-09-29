@@ -30,6 +30,7 @@ type Service struct {
 }
 
 func New(db *storage.DB, envPath string) *Service {
+	_ = LoadEnv(envPath)
 	return &Service{
 		db:      db,
 		envPath: envPath,
@@ -155,5 +156,8 @@ func (s *Service) GetEnv() (map[string]string, error) {
 }
 
 func (s *Service) SaveEnv(envMap map[string]string) error {
+	for k, v := range envMap {
+		os.Setenv(k, v)
+	}
 	return WriteEnv(s.envPath, envMap)
 }

@@ -56,3 +56,14 @@ func WriteEnv(filePath string, envMap map[string]string) error {
 
 	return os.WriteFile(filePath, []byte(sb.String()), 0644)
 }
+
+func LoadEnv(filePath string) error {
+	vars, err := ReadEnv(filePath)
+	if err != nil {
+		return err
+	}
+	for k, v := range vars {
+		os.Setenv(k, v)
+	}
+	return nil
+}
