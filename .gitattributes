@@ -1,0 +1,5 @@
+# Exclude agent skills, tooling, and design systems from GitHub language detection
+.agents/** linguist-vendored
+design-system/** linguist-vendored
+docs/** linguist-documentation
+scripts/** linguist-vendored
