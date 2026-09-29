@@ -41,6 +41,7 @@ func (th *TrayHandler) onReady() {
 	systray.SetTooltip("ActaCron - Dynamic JS Engine & Cron Hub")
 
 	mOpen := systray.AddMenuItem("Open Dashboard", "Open ActaCron Edge Web UI")
+	mOpenFolder := systray.AddMenuItem("Open Packages Folder", "Open packages workspace directory in File Explorer")
 	mSync := systray.AddMenuItem("Sync All Git", "Pull and sync all Git packages")
 
 	var mPause *systray.MenuItem
@@ -60,6 +61,14 @@ func (th *TrayHandler) onReady() {
 				log.Printf("[Tray] Open Dashboard clicked: launching %s", th.dashboardURL)
 				if err := OpenDashboard(th.dashboardURL); err != nil {
 					log.Printf("[Tray] Failed to open dashboard: %v", err)
+				}
+
+			case <-mOpenFolder.ClickedCh:
+				if th.mgr != nil {
+					log.Printf("[Tray] Opening packages folder: %s", th.mgr.PackagesDir())
+					if err := OpenFolder(th.mgr.PackagesDir()); err != nil {
+						log.Printf("[Tray] Failed to open folder: %v", err)
+					}
 				}
 
 			case <-mSync.ClickedCh:

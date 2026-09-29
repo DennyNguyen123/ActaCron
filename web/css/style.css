@@ -393,6 +393,55 @@ main.app-main {
   border-radius: 3px;
 }
 
+.btn-tree-delete {
+  background: transparent;
+  border: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.tree-file-item:hover .btn-tree-delete {
+  opacity: 0.85;
+}
+
+.btn-tree-delete:hover {
+  opacity: 1 !important;
+  color: var(--color-danger);
+  background-color: rgba(239, 68, 68, 0.18);
+}
+
+.btn-pkg-folder {
+  background: transparent;
+  border: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  opacity: 0.6;
+  font-size: 11px;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.tree-package-header:hover .btn-pkg-folder {
+  opacity: 1;
+}
+
+.btn-pkg-folder:hover {
+  color: var(--color-accent);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
 /* Editor Pane (Center) */
 .editor-pane {
   flex: 1;

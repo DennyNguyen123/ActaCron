@@ -383,3 +383,23 @@ func (m *Manager) StopWatcher() {
 		m.watcher.Close()
 	}
 }
+
+// DeleteFunction deletes a script file from disk and reloads packages.
+func (m *Manager) DeleteFunction(pkgName, funcFileName string) error {
+	funcFileName = filepath.Base(funcFileName)
+	if !strings.HasSuffix(funcFileName, ".js") {
+		funcFileName += ".js"
+	}
+	pkgPath := filepath.Join(m.packagesDir, filepath.Base(pkgName))
+	filePath := filepath.Join(pkgPath, funcFileName)
+
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file '%s' not found in package '%s'", funcFileName, pkgName)
+		}
+		return err
+	}
+
+	return m.Reload()
+}
+

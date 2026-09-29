@@ -44,6 +44,8 @@ func NewRouter(
 	mux.HandleFunc("/api/functions", handler.handleListFunctions)
 	mux.HandleFunc("/api/functions/code", handler.handleGetFunctionCode)
 	mux.HandleFunc("/api/functions/save", handler.handleSaveFunctionCode)
+	mux.HandleFunc("/api/functions/delete", handler.handleDeleteFunction)
+	mux.HandleFunc("/api/workspace/open", handler.handleOpenFolder)
 	mux.HandleFunc("/api/run", handler.handleRunFunction)
 
 	mux.HandleFunc("/api/cron", handler.handleCron)

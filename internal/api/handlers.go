@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"actacron/internal/scheduler"
 	"actacron/internal/settings"
 	"actacron/internal/storage"
+	"actacron/internal/tray"
 )
 
 type APIHandler struct {
@@ -266,6 +268,78 @@ func (h *APIHandler) handleSaveFunctionCode(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+func (h *APIHandler) handleDeleteFunction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		Package  string `json:"package"`
+		Filename string `json:"filename"`
+	}
+
+	if r.Method == http.MethodDelete && r.URL.Query().Get("package") != "" {
+		req.Package = r.URL.Query().Get("package")
+		req.Filename = r.URL.Query().Get("filename")
+	} else {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+
+	if req.Package == "" || req.Filename == "" {
+		writeError(w, http.StatusBadRequest, "package and filename are required")
+		return
+	}
+
+	if err := h.mgr.DeleteFunction(req.Package, req.Filename); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if h.sched != nil {
+		h.sched.Reschedule()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":   "deleted",
+		"package":  req.Package,
+		"filename": req.Filename,
+	})
+}
+
+func (h *APIHandler) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		Package string `json:"package"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	targetDir := h.mgr.PackagesDir()
+	if req.Package != "" {
+		cleanPkg := filepath.Base(req.Package)
+		targetDir = filepath.Join(targetDir, cleanPkg)
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create directory: "+err.Error())
+		return
+	}
+
+	if err := tray.OpenFolder(targetDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to open folder: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "opened", "path": targetDir})
 }
 
 func (h *APIHandler) handleRunFunction(w http.ResponseWriter, r *http.Request) {

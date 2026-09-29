@@ -206,15 +206,26 @@
       const pkgLi = document.createElement("li");
       pkgLi.className = "tree-package-header";
       pkgLi.innerHTML = `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-        ${pkgName}
+        <div style="display:flex; align-items:center; gap:6px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>${pkgName}</span>
+        </div>
+        <button class="btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
       `;
+
+      const folderBtn = pkgLi.querySelector(".btn-pkg-folder");
+      if (folderBtn) {
+        folderBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openWorkspaceFolder(pkgName);
+        });
+      }
       tree.appendChild(pkgLi);
 
       grouped[pkgName].forEach(fn => {
         const itemLi = document.createElement("li");
         itemLi.className = "tree-file-item";
-        if (activeScript && activeScript.package === fn.package && activeScript.name === fn.name) {
+        if (activeScript && activeScript.package === fn.package && (activeScript.file_path === fn.file_path || activeScript.name === fn.name)) {
           itemLi.classList.add("active");
         }
 
@@ -224,10 +235,22 @@
 
         itemLi.innerHTML = `
           <span>${fn.name}</span>
-          <div style="display:flex; gap:4px;">${badges.join("")}</div>
+          <div style="display:flex; gap:4px; align-items:center;">
+            ${badges.join("")}
+            <button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
         `;
 
         itemLi.addEventListener("click", () => openScript(fn));
+        const delBtn = itemLi.querySelector(".btn-tree-delete");
+        if (delBtn) {
+          delBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteScript(fn.package, fn.file_path || (fn.name + ".js"), fn.name);
+          });
+        }
         tree.appendChild(itemLi);
       });
     });
@@ -235,9 +258,12 @@
 
   async function openScript(fn) {
     activeScript = fn;
+    const btnDel = document.getElementById("btnDeleteScript");
+    if (btnDel) btnDel.style.display = "inline-flex";
+
     document.getElementById("currentFileTitle").innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
-      <span>${fn.package}/${fn.name}.js</span>
+      <span>${fn.package}/${fn.file_path || (fn.name + ".js")}</span>
     `;
 
     // Fetch code content via /api/functions/code?key=pkg/name
@@ -259,6 +285,67 @@
     // Highlight in tree
     document.querySelectorAll(".tree-file-item").forEach(el => el.classList.remove("active"));
     renderTree(allFunctions);
+  }
+
+  function clearActiveScript() {
+    activeScript = null;
+    const titleEl = document.getElementById("currentFileTitle");
+    if (titleEl) titleEl.innerHTML = "<span>Select a script to edit</span>";
+    const editorEl = document.getElementById("scriptEditor");
+    if (editorEl) editorEl.value = "";
+    const btnDel = document.getElementById("btnDeleteScript");
+    if (btnDel) btnDel.style.display = "none";
+    const inspCron = document.getElementById("inspCronExpr");
+    if (inspCron) inspCron.value = "";
+    updateInspectorCronHuman();
+    const mcpToggle = document.getElementById("inspMcpToggle");
+    if (mcpToggle) mcpToggle.checked = false;
+  }
+
+  async function deleteScript(pkg, file, name) {
+    const t = window.I18n ? window.I18n.t : (k => k);
+    let confirmMsg = (window.I18n && window.I18n.t("delete_confirm")) || `Are you sure you want to delete script '{name}' from package '{pkg}'? This cannot be undone.`;
+    confirmMsg = confirmMsg.replace("{name}", name).replace("{pkg}", pkg);
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch("/api/functions/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: pkg, filename: file })
+      });
+      if (res.ok) {
+        if (activeScript && activeScript.package === pkg && (activeScript.file_path === file || activeScript.name === name)) {
+          clearActiveScript();
+        }
+        await loadFunctions();
+        loadOverview();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert((t("delete_failed") || "Failed to delete: ") + (err.error || res.statusText));
+      }
+    } catch (e) {
+      alert((t("delete_failed") || "Failed to delete: ") + e.message);
+    }
+  }
+
+  async function openWorkspaceFolder(pkg = "") {
+    try {
+      const res = await fetch("/api/workspace/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: pkg })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const t = window.I18n ? window.I18n.t : (k => k);
+        alert((t("open_folder_failed") || "Failed to open directory: ") + (err.error || res.statusText));
+      }
+    } catch (e) {
+      const t = window.I18n ? window.I18n.t : (k => k);
+      alert((t("open_folder_failed") || "Failed to open directory: ") + e.message);
+    }
   }
 
   function updateInspectorCronHuman() {
@@ -360,6 +447,20 @@
     document.getElementById("btnSaveScript").addEventListener("click", saveCurrentScript);
     document.getElementById("btnRunScript").addEventListener("click", runCurrentScript);
     document.getElementById("btnRunInspector").addEventListener("click", runCurrentScript);
+
+    const btnDelScript = document.getElementById("btnDeleteScript");
+    if (btnDelScript) {
+      btnDelScript.addEventListener("click", () => {
+        if (activeScript) {
+          deleteScript(activeScript.package, activeScript.file_path || (activeScript.name + ".js"), activeScript.name);
+        }
+      });
+    }
+
+    const btnOpenWs = document.getElementById("btnOpenWorkspaceFolder");
+    if (btnOpenWs) {
+      btnOpenWs.addEventListener("click", () => openWorkspaceFolder(""));
+    }
   }
 
   async function saveCurrentScript() {

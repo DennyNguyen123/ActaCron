@@ -93,3 +93,35 @@ func TestCyclicCallDepthExceeded(t *testing.T) {
 		t.Fatalf("expected cyclic recursion error, got nil")
 	}
 }
+
+func TestSaveAndDeleteFunction(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_del.db")
+	db, _ := storage.New(dbFile)
+	defer db.Close()
+
+	runner := engine.New(db, 5, false)
+	mgr := manager.New(tmpDir, runner, db)
+
+	// Save function
+	code := `function main() { return "hello"; }`
+	if err := mgr.SaveFunctionCode("testpkg", "greet.js", code); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	fn := mgr.GetFunction("testpkg/greet")
+	if fn == nil {
+		t.Fatalf("expected function to exist after save")
+	}
+
+	// Delete function
+	if err := mgr.DeleteFunction("testpkg", "greet.js"); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+
+	fnAfter := mgr.GetFunction("testpkg/greet")
+	if fnAfter != nil {
+		t.Fatalf("expected function to be removed after delete")
+	}
+}
+

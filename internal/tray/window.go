@@ -22,3 +22,16 @@ func OpenDashboard(url string) error {
 	}
 	return exec.Command("xdg-open", url).Start()
 }
+
+// OpenFolder opens the specified directory in the system file explorer.
+func OpenFolder(dirPath string) error {
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("explorer", dirPath)
+		return cmd.Start()
+	}
+	if runtime.GOOS == "darwin" {
+		return exec.Command("open", dirPath).Start()
+	}
+	return exec.Command("xdg-open", dirPath).Start()
+}
+

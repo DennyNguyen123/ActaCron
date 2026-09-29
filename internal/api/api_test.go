@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"actacron/internal/api"
@@ -63,5 +64,19 @@ func TestAPIEndpoints(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK for static index.html, got %v, err: %v", resp, err)
 	}
+
+	// 4. Save and Delete function API
+	savePayload := `{"package":"testpkg","filename":"hello.js","code":"function main() { return 42; }"}`
+	resp, err = http.Post(ts.URL+"/api/functions/save", "application/json", strings.NewReader(savePayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for save, got %v, err: %v", resp, err)
+	}
+
+	delPayload := `{"package":"testpkg","filename":"hello.js"}`
+	resp, err = http.Post(ts.URL+"/api/functions/delete", "application/json", strings.NewReader(delPayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for delete, got %v, err: %v", resp, err)
+	}
 }
+
 
