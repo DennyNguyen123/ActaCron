@@ -14,6 +14,7 @@ import (
 	"actacron/internal/scheduler"
 	"actacron/internal/settings"
 	"actacron/internal/storage"
+	"actacron/web"
 )
 
 func TestAPIEndpoints(t *testing.T) {
@@ -52,4 +53,15 @@ func TestAPIEndpoints(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK for /api/settings, got %v, err: %v", resp, err)
 	}
+
+	// 3. Static assets serving
+	routerWithStatic := api.NewRouter(mgr, sched, db, gitSvc, settingsSvc, web.Assets)
+	tsStatic := httptest.NewServer(routerWithStatic)
+	defer tsStatic.Close()
+
+	resp, err = http.Get(tsStatic.URL + "/")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for static index.html, got %v, err: %v", resp, err)
+	}
 }
+

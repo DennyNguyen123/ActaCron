@@ -1,0 +1,701 @@
+// ActaCron Client Application
+(function () {
+  let activeScript = null; // { package, name, file_path, cron_expr, is_mcp, ... }
+  let allFunctions = [];
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initI18nAndTheme();
+    initNav();
+    initSettingsTabs();
+    initWorkspaceEvents();
+    initLogsEvents();
+    initSettingsEvents();
+    initModals();
+
+    // Start background health polling
+    pollHealth();
+    setInterval(pollHealth, 5000);
+
+    // Initial load
+    loadFunctions();
+    loadLogs();
+  });
+
+  // --- Theme & i18n Initialization ---
+  function initI18nAndTheme() {
+    // Language
+    const savedLang = localStorage.getItem("actacron_lang") || "en";
+    window.I18n.setLanguage(savedLang);
+
+    // Theme & Density
+    const savedTheme = localStorage.getItem("actacron_theme") || "emerald";
+    const savedDensity = localStorage.getItem("actacron_density") || "normal";
+    const savedFontSize = localStorage.getItem("actacron_fontsize") || "13.5px";
+
+    applyTheme(savedTheme);
+    applyDensity(savedDensity);
+    applyFontSize(savedFontSize);
+
+    // Header buttons
+    document.getElementById("topLangToggle").addEventListener("click", () => {
+      const next = window.I18n.getLanguage() === "en" ? "vi" : "en";
+      window.I18n.setLanguage(next);
+      updateInspectorCronHuman();
+    });
+
+    document.getElementById("btnSyncAll").addEventListener("click", syncAllGit);
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("actacron_theme", theme);
+    const select = document.getElementById("uiThemeSelect");
+    if (select) select.value = theme;
+  }
+
+  function applyDensity(density) {
+    document.documentElement.setAttribute("data-density", density);
+    localStorage.setItem("actacron_density", density);
+    const select = document.getElementById("uiDensitySelect");
+    if (select) select.value = density;
+  }
+
+  function applyFontSize(size) {
+    document.documentElement.style.setProperty("--editor-font-size", size);
+    localStorage.setItem("actacron_fontsize", size);
+    const select = document.getElementById("uiFontSizeSelect");
+    if (select) select.value = size;
+  }
+
+  // --- Navigation Router ---
+  function initNav() {
+    document.querySelectorAll(".nav-item").forEach(item => {
+      item.addEventListener("click", () => {
+        document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+        document.querySelectorAll(".view-page").forEach(p => p.classList.remove("active"));
+
+        item.classList.add("active");
+        const viewId = item.getAttribute("data-view");
+        const page = document.getElementById("view-" + viewId);
+        if (page) page.classList.add("active");
+
+        if (viewId === "overview") refreshOverview();
+        if (viewId === "workspace") loadFunctions();
+        if (viewId === "logs") loadLogs();
+        if (viewId === "mcp") loadMcpHub();
+        if (viewId === "settings") loadAllSettings();
+      });
+    });
+  }
+
+  // --- Settings Tabs ---
+  function initSettingsTabs() {
+    document.querySelectorAll(".settings-tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".settings-tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".settings-panel").forEach(p => p.classList.remove("active"));
+
+        btn.classList.add("active");
+        const tab = btn.getAttribute("data-tab");
+        const panel = document.getElementById("panel-" + tab);
+        if (panel) panel.classList.add("active");
+      });
+    });
+  }
+
+  // --- Health Polling ---
+  async function pollHealth() {
+    try {
+      const res = await fetch("/api/health");
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById("headerRam").textContent = data.memory_mb + " MB";
+      document.getElementById("headerCrons").textContent = data.active_jobs || 0;
+      document.getElementById("statRam").textContent = data.memory_mb + " MB";
+    } catch (_) {}
+  }
+
+  // --- Overview Refresh ---
+  async function refreshOverview() {
+    await loadFunctions();
+    await loadLogs();
+
+    document.getElementById("statTotalFuncs").textContent = allFunctions.length;
+
+    const cronFuncs = allFunctions.filter(f => f.cron_expr && f.cron_expr.trim() !== "");
+    document.getElementById("statActiveCrons").textContent = cronFuncs.length;
+
+    const mcpFuncs = allFunctions.filter(f => f.is_mcp);
+    document.getElementById("statMcpTools").textContent = mcpFuncs.length;
+
+    // Cron table
+    const cronTbody = document.getElementById("overviewCronTable");
+    cronTbody.innerHTML = "";
+    if (cronFuncs.length === 0) {
+      cronTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--color-muted-foreground);">No active crons configured</td></tr>';
+    } else {
+      cronFuncs.forEach(fn => {
+        const tr = document.createElement("tr");
+        const human = window.I18n.cronToString(fn.cron_expr);
+        tr.innerHTML = `
+          <td><strong>${fn.package}/${fn.name}</strong></td>
+          <td><code>${fn.cron_expr}</code> <span style="font-size:11px; color:var(--color-accent); margin-left:6px;">(${human})</span></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="runFunction('${fn.package}', '${fn.name}')">Run Now</button></td>
+        `;
+        cronTbody.appendChild(tr);
+      });
+    }
+
+    // Recent logs
+    try {
+      const res = await fetch("/api/logs?limit=5");
+      if (res.ok) {
+        const data = await res.json();
+        const logs = data.logs || [];
+        const tbody = document.getElementById("overviewRecentLogs");
+        tbody.innerHTML = "";
+        if (logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--color-muted-foreground);">No executions yet</td></tr>';
+        } else {
+          logs.forEach(l => {
+            const tr = document.createElement("tr");
+            const badgeClass = l.status === "success" ? "badge-status-success" : "badge-status-error";
+            tr.innerHTML = `
+              <td style="font-size:11px; color:var(--color-muted-foreground);">${new Date(l.created_at).toLocaleTimeString()}</td>
+              <td>${l.function_name}</td>
+              <td><span class="${badgeClass}">${l.status}</span></td>
+              <td>${l.duration_ms}ms</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  // --- Functions / Workspace ---
+  async function loadFunctions() {
+    try {
+      const res = await fetch("/api/functions");
+      if (!res.ok) return;
+      const data = await res.json();
+      allFunctions = Array.isArray(data) ? data : (data.functions || []);
+
+      renderTree(allFunctions);
+    } catch (err) {
+      console.error("Failed to load functions", err);
+    }
+  }
+
+  function renderTree(funcs) {
+    const tree = document.getElementById("scriptsTree");
+    tree.innerHTML = "";
+
+    // Group by package
+    const grouped = {};
+    funcs.forEach(f => {
+      if (!grouped[f.package]) grouped[f.package] = [];
+      grouped[f.package].push(f);
+    });
+
+    Object.keys(grouped).forEach(pkgName => {
+      const pkgLi = document.createElement("li");
+      pkgLi.className = "tree-package-header";
+      pkgLi.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        ${pkgName}
+      `;
+      tree.appendChild(pkgLi);
+
+      grouped[pkgName].forEach(fn => {
+        const itemLi = document.createElement("li");
+        itemLi.className = "tree-file-item";
+        if (activeScript && activeScript.package === fn.package && activeScript.name === fn.name) {
+          itemLi.classList.add("active");
+        }
+
+        const badges = [];
+        if (fn.is_mcp) badges.push('<span class="badge-mcp-mini">MCP</span>');
+        if (fn.cron_expr) badges.push('<span class="badge-cron-mini">CRON</span>');
+
+        itemLi.innerHTML = `
+          <span>${fn.name}</span>
+          <div style="display:flex; gap:4px;">${badges.join("")}</div>
+        `;
+
+        itemLi.addEventListener("click", () => openScript(fn));
+        tree.appendChild(itemLi);
+      });
+    });
+  }
+
+  async function openScript(fn) {
+    activeScript = fn;
+    document.getElementById("currentFileTitle").innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+      <span>${fn.package}/${fn.name}.js</span>
+    `;
+
+    // Fetch code content via /api/functions/code?key=pkg/name
+    const key = fn.package + "/" + fn.name;
+    try {
+      const res = await fetch(`/api/functions/code?key=${encodeURIComponent(key)}`);
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById("scriptEditor").value = data.code || "";
+      }
+    } catch (_) {}
+
+    // Update inspector
+    document.getElementById("inspCronExpr").value = fn.cron_expr || "";
+    updateInspectorCronHuman();
+    document.getElementById("inspMcpStatus").textContent = fn.is_mcp ? "Enabled" : "Disabled";
+    document.getElementById("inspMcpStatus").className = fn.is_mcp ? "badge-status-success" : "badge-status-error";
+
+    // Highlight in tree
+    document.querySelectorAll(".tree-file-item").forEach(el => el.classList.remove("active"));
+    renderTree(allFunctions);
+  }
+
+  function updateInspectorCronHuman() {
+    const expr = document.getElementById("inspCronExpr").value;
+    const humanEl = document.getElementById("inspCronHuman");
+    if (expr && expr.trim() !== "") {
+      humanEl.textContent = "(" + window.I18n.cronToString(expr) + ")";
+    } else {
+      humanEl.textContent = "";
+    }
+  }
+
+  function initWorkspaceEvents() {
+    const editor = document.getElementById("scriptEditor");
+
+    // Hotkeys: Ctrl+S to save, Ctrl+Enter to run, Tab for indent
+    editor.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        saveCurrentScript();
+      } else if (e.ctrlKey && e.key === "Enter") {
+        e.preventDefault();
+        runCurrentScript();
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        editor.value = editor.value.substring(0, start) + "  " + editor.value.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + 2;
+      }
+    });
+
+    document.getElementById("btnSaveScript").addEventListener("click", saveCurrentScript);
+    document.getElementById("btnRunScript").addEventListener("click", runCurrentScript);
+    document.getElementById("btnRunInspector").addEventListener("click", runCurrentScript);
+  }
+
+  async function saveCurrentScript() {
+    if (!activeScript) return;
+    const content = document.getElementById("scriptEditor").value;
+
+    try {
+      const res = await fetch("/api/functions/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          package: activeScript.package,
+          filename: activeScript.file_path,
+          code: content
+        })
+      });
+      if (res.ok) {
+        showConsole("Script saved successfully.", 0);
+        await loadFunctions();
+      } else {
+        const err = await res.json();
+        showConsole("Failed to save: " + (err.error || "Unknown error"), 0);
+      }
+    } catch (err) {
+      showConsole("Error saving script: " + err.message, 0);
+    }
+  }
+
+  async function runCurrentScript() {
+    if (!activeScript) return;
+    const funcKey = activeScript.package + "/" + activeScript.name;
+    let payload = {};
+    try {
+      const raw = document.getElementById("inspTestPayload").value;
+      if (raw.trim() !== "") payload = JSON.parse(raw);
+    } catch (err) {
+      showConsole("Invalid JSON input payload: " + err.message, 0);
+      return;
+    }
+
+    showConsole(window.I18n.t("running_func"), 0);
+    const start = performance.now();
+
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: funcKey,
+          params: payload
+        })
+      });
+
+      const data = await res.json();
+      const elapsed = Math.round(performance.now() - start);
+
+      let out = "";
+      if (data.console_logs && data.console_logs.trim() !== "") {
+        out += "--- Logs ---\n" + data.console_logs + "\n\n";
+      }
+      out += "--- Return Value ---\n" + (typeof data.output === "object" ? JSON.stringify(data.output, null, 2) : data.output);
+      if (data.error) {
+        out += "\n\n--- Error ---\n" + data.error;
+      }
+
+      showConsole(out, data.duration_ms || elapsed);
+    } catch (err) {
+      showConsole("Network or server error: " + err.message, 0);
+    }
+  }
+
+  window.runFunction = async function (pkg, name) {
+    const fn = allFunctions.find(f => f.package === pkg && f.name === name);
+    if (fn) {
+      document.querySelector('[data-view="workspace"]').click();
+      await openScript(fn);
+      runCurrentScript();
+    }
+  };
+
+  function showConsole(text, durationMs) {
+    document.getElementById("outputConsole").textContent = text;
+    document.getElementById("execDuration").textContent = durationMs + "ms";
+  }
+
+  // --- Logs Viewer ---
+  function initLogsEvents() {
+    document.getElementById("btnRefreshLogs").addEventListener("click", loadLogs);
+    document.getElementById("logFilterStatus").addEventListener("change", loadLogs);
+    document.getElementById("logFilterFunc").addEventListener("keyup", (e) => {
+      if (e.key === "Enter") loadLogs();
+    });
+  }
+
+  async function loadLogs() {
+    const func = document.getElementById("logFilterFunc").value;
+    const status = document.getElementById("logFilterStatus").value;
+    const url = `/api/logs?func=${encodeURIComponent(func)}&status=${encodeURIComponent(status)}&limit=50`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const tbody = document.getElementById("logsTableBody");
+      tbody.innerHTML = "";
+
+      const logs = data.logs || [];
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No logs found</td></tr>';
+        return;
+      }
+
+      logs.forEach(l => {
+        const tr = document.createElement("tr");
+        const badgeClass = l.status === "success" ? "badge-status-success" : "badge-status-error";
+        tr.innerHTML = `
+          <td style="font-size:12px; color:var(--color-muted-foreground);">${new Date(l.created_at).toLocaleString()}</td>
+          <td><strong>${l.function_name}</strong></td>
+          <td><span class="${badgeClass}">${(l.status || "").toUpperCase()}</span></td>
+          <td>${l.duration_ms}ms</td>
+          <td>${l.trigger_type || "manual"}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="viewLogDetail(${l.id})">View</button></td>
+        `;
+        tr._logData = l;
+        tbody.appendChild(tr);
+      });
+    } catch (_) {}
+  }
+
+  window.viewLogDetail = function (id) {
+    const rows = document.querySelectorAll("#logsTableBody tr");
+    for (const r of rows) {
+      if (r._logData && r._logData.id === id) {
+        const l = r._logData;
+        document.getElementById("modalLogTitle").textContent = `Log: ${l.function_name} (${l.status})`;
+        let details = `Timestamp: ${l.created_at}\nDuration: ${l.duration_ms}ms\nTrigger: ${l.trigger_type}\n\n`;
+        if (l.error_message) details += `ERROR:\n${l.error_message}\n\n`;
+        if (l.output_data) details += `OUTPUT:\n${l.output_data}\n\n`;
+        if (l.console_logs) details += `CONSOLE LOGS:\n${l.console_logs}`;
+        document.getElementById("modalLogOutput").textContent = details;
+        document.getElementById("modalLog").classList.add("open");
+        break;
+      }
+    }
+  };
+
+  // --- MCP Hub ---
+  async function loadMcpHub() {
+    try {
+      const res = await fetch("/api/mcp/tools");
+      if (!res.ok) return;
+      const data = await res.json();
+      const tools = data.tools || [];
+
+      const tbody = document.getElementById("mcpToolsTable");
+      tbody.innerHTML = "";
+      if (tools.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">No MCP tools exported yet</td></tr>';
+        return;
+      }
+
+      tools.forEach(t => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${t.name}</strong></td>
+          <td>${t.description || "—"}</td>
+          <td><code>${JSON.stringify(t.inputSchema || {})}</code></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (_) {}
+  }
+
+  window.copyText = function (elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    navigator.clipboard.writeText(el.innerText || el.textContent).then(() => {
+      alert(window.I18n.t("copied"));
+    });
+  };
+
+  // --- Settings ---
+  function initSettingsEvents() {
+    document.getElementById("btnSaveGeneral").addEventListener("click", saveGeneralSettings);
+    document.getElementById("btnSaveGit").addEventListener("click", saveGitSettings);
+    document.getElementById("btnSaveEnv").addEventListener("click", saveEnvSettings);
+    document.getElementById("btnSaveUI").addEventListener("click", saveUISettings);
+    document.getElementById("btnAddEnvRow").addEventListener("click", () => addEnvRow("", ""));
+  }
+
+  async function loadAllSettings() {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById("settingPort").value = data.port || 8080;
+        document.getElementById("settingTimeout").value = data.timeout_seconds || 30;
+        document.getElementById("settingRetention").value = data.retention_days || 7;
+        document.getElementById("settingAutostart").checked = !!data.run_on_startup;
+        document.getElementById("settingAllowShell").checked = !!data.allow_shell;
+
+        document.getElementById("settingGitAuthor").value = data.git_author_name || "";
+        document.getElementById("settingGitEmail").value = data.git_author_email || "";
+        document.getElementById("settingGitToken").value = data.git_token || "";
+
+        if (data.language) window.I18n.setLanguage(data.language);
+        if (data.theme_accent) {
+          const themeMap = { "#22C55E": "emerald", "#38BDF8": "blue", "#A855F7": "purple", "#C084FC": "purple" };
+          applyTheme(themeMap[data.theme_accent] || "emerald");
+        }
+        if (data.density) applyDensity(data.density);
+        if (data.editor_font_size) applyFontSize(data.editor_font_size);
+      }
+
+      // Load env
+      const envRes = await fetch("/api/env");
+      if (envRes.ok) {
+        const envData = await envRes.json();
+        const container = document.getElementById("envTableRows");
+        container.innerHTML = "";
+        const envMap = envData.env || {};
+        Object.keys(envMap).forEach(k => addEnvRow(k, envMap[k]));
+      }
+    } catch (err) {
+      console.error("Failed to load settings", err);
+    }
+  }
+
+  function addEnvRow(key, val) {
+    const container = document.getElementById("envTableRows");
+    const div = document.createElement("div");
+    div.className = "env-row";
+    div.innerHTML = `
+      <input type="text" class="env-key" value="${key}" placeholder="VARIABLE_NAME" style="width:200px; font-family:var(--font-heading);">
+      <input type="text" class="env-val" value="${val}" placeholder="Value" style="flex:1;">
+      <button class="btn btn-outline btn-sm btn-del-env">&times;</button>
+    `;
+    div.querySelector(".btn-del-env").addEventListener("click", () => div.remove());
+    container.appendChild(div);
+  }
+
+  async function saveGeneralSettings() {
+    const payload = {
+      port: parseInt(document.getElementById("settingPort").value, 10),
+      timeout_seconds: parseInt(document.getElementById("settingTimeout").value, 10),
+      retention_days: parseInt(document.getElementById("settingRetention").value, 10),
+      run_on_startup: document.getElementById("settingAutostart").checked,
+      allow_shell: document.getElementById("settingAllowShell").checked
+    };
+    await postSettings(payload);
+  }
+
+  async function saveGitSettings() {
+    const payload = {
+      git_author_name: document.getElementById("settingGitAuthor").value,
+      git_author_email: document.getElementById("settingGitEmail").value,
+      git_token: document.getElementById("settingGitToken").value
+    };
+    await postSettings(payload);
+  }
+
+  async function saveUISettings() {
+    const lang = document.getElementById("uiLangSelect").value;
+    const theme = document.getElementById("uiThemeSelect").value;
+    const density = document.getElementById("uiDensitySelect").value;
+    const fontSize = document.getElementById("uiFontSizeSelect").value;
+
+    window.I18n.setLanguage(lang);
+    applyTheme(theme);
+    applyDensity(density);
+    applyFontSize(fontSize);
+
+    const themeAccentMap = { emerald: "#22C55E", blue: "#38BDF8", purple: "#A855F7" };
+
+    const payload = {
+      language: lang,
+      theme_accent: themeAccentMap[theme] || "#22C55E",
+      density: density,
+      editor_font_size: fontSize
+    };
+    await postSettings(payload);
+  }
+
+  async function postSettings(payload) {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        alert(window.I18n.t("saved_successfully"));
+      } else {
+        const err = await res.json();
+        alert(window.I18n.t("save_failed") + (err.error || ""));
+      }
+    } catch (err) {
+      alert(window.I18n.t("save_failed") + err.message);
+    }
+  }
+
+  async function saveEnvSettings() {
+    const envObj = {};
+    document.querySelectorAll(".env-row").forEach(row => {
+      const k = row.querySelector(".env-key").value.trim();
+      const v = row.querySelector(".env-val").value;
+      if (k) envObj[k] = v;
+    });
+
+    try {
+      const res = await fetch("/api/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env: envObj })
+      });
+      if (res.ok) {
+        alert(window.I18n.t("saved_successfully"));
+      } else {
+        const err = await res.json();
+        alert(window.I18n.t("save_failed") + (err.error || ""));
+      }
+    } catch (err) {
+      alert(window.I18n.t("save_failed") + err.message);
+    }
+  }
+
+  async function syncAllGit() {
+    try {
+      const btn = document.getElementById("btnSyncAll");
+      btn.textContent = "Syncing...";
+      btn.disabled = true;
+      const res = await fetch("/api/packages/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package_name: "default" })
+      });
+      if (res.ok) {
+        alert("Git sync executed successfully.");
+        await loadFunctions();
+      } else {
+        const err = await res.json();
+        alert("Git sync result: " + (err.error || "Done"));
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+    } finally {
+      const btn = document.getElementById("btnSyncAll");
+      btn.textContent = window.I18n.t("sync_all");
+      btn.disabled = false;
+    }
+  }
+
+  // --- Modals ---
+  function initModals() {
+    // Log Modal
+    const modalLog = document.getElementById("modalLog");
+    document.getElementById("btnCloseLogModal").addEventListener("click", () => modalLog.classList.remove("open"));
+    document.getElementById("btnCloseLogModalBtn").addEventListener("click", () => modalLog.classList.remove("open"));
+
+    // New Script Modal
+    const modalNew = document.getElementById("modalNewScript");
+    document.getElementById("btnNewScript").addEventListener("click", () => modalNew.classList.add("open"));
+    document.getElementById("btnCloseNewScript").addEventListener("click", () => modalNew.classList.remove("open"));
+    document.getElementById("btnCancelNewScript").addEventListener("click", () => modalNew.classList.remove("open"));
+
+    document.getElementById("btnConfirmNewScript").addEventListener("click", async () => {
+      const pkg = document.getElementById("newScriptPkg").value.trim() || "default";
+      let file = document.getElementById("newScriptFile").value.trim();
+      if (!file) return;
+      if (!file.endsWith(".js")) file += ".js";
+
+      const template = `/**
+ * @name ${file.replace(".js", "")}
+ * @cron * * * * *
+ * @mcp true
+ * @description Describe your function here
+ * @param {string} message - Greeting input
+ */
+function main(params) {
+  console.log("Running task:", params.message);
+  return { status: "ok", reply: "Hello " + (params.message || "World") };
+}
+`;
+      try {
+        const res = await fetch("/api/functions/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            package: pkg,
+            filename: file,
+            code: template
+          })
+        });
+        if (res.ok) {
+          modalNew.classList.remove("open");
+          await loadFunctions();
+          const created = allFunctions.find(f => f.package === pkg && f.name === file.replace(".js", ""));
+          if (created) openScript(created);
+        } else {
+          const err = await res.json();
+          alert("Failed to create script: " + (err.error || ""));
+        }
+      } catch (err) {
+        alert("Error creating script: " + err.message);
+      }
+    });
+  }
+})();

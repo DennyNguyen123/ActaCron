@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald" data-density="normal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ActaCron - Dynamic JS Engine & Cron Hub</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span data-i18n="app_title">ActaCron</span>
+      </div>
+      <span class="brand-badge">v1.0.0</span>
+    </div>
+
+    <div class="header-status-group">
+      <div class="status-indicator">
+        <div class="status-dot"></div>
+        <span data-i18n="sys_healthy">System Operational</span>
+      </div>
+      <div class="metric-chip">
+        <span style="color:var(--color-muted-foreground);" data-i18n="ram_usage">RAM</span>:
+        <span id="headerRam">-- MB</span>
+      </div>
+      <div class="metric-chip">
+        <span style="color:var(--color-muted-foreground);" data-i18n="cron_active">Active Crons</span>:
+        <span id="headerCrons" style="color:var(--color-accent);">0</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-outline btn-sm" id="topLangToggle">🌐 EN</button>
+      <button class="btn btn-secondary btn-sm" id="btnSyncAll" data-i18n="sync_all">Sync All Git</button>
+    </div>
+  </header>
+
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <nav class="app-sidebar">
+      <ul class="nav-list">
+        <li class="nav-item active" data-view="overview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span data-i18n="nav_overview">Overview</span>
+        </li>
+        <li class="nav-item" data-view="workspace">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          <span data-i18n="nav_workspace">Workspace</span>
+        </li>
+        <li class="nav-item" data-view="logs">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span data-i18n="nav_logs">Logs</span>
+        </li>
+        <li class="nav-item" data-view="mcp">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          <span data-i18n="nav_mcp">MCP Hub</span>
+        </li>
+        <li class="nav-item" data-view="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span data-i18n="nav_settings">Settings</span>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <!-- 1. OVERVIEW VIEW -->
+      <section class="view-page active" id="view-overview">
+        <div class="overview-container">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">Total Functions</span>
+              <span class="stat-value" id="statTotalFuncs">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Active Cron Jobs</span>
+              <span class="stat-value" id="statActiveCrons" style="color:var(--color-accent);">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">MCP Tools Exported</span>
+              <span class="stat-value" id="statMcpTools" style="color:#38BDF8;">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">System Memory</span>
+              <span class="stat-value" id="statRam">0 MB</span>
+            </div>
+          </div>
+
+          <div class="overview-tables">
+            <div class="stat-card">
+              <h3 style="margin-bottom: var(--space-md); font-family: var(--font-heading); font-size: 14px;">Active Scheduled Crons</h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Function</th>
+                    <th>Schedule</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewCronTable">
+                  <tr><td colspan="3" style="text-align:center; color:var(--color-muted-foreground);">No active crons configured</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="stat-card">
+              <h3 style="margin-bottom: var(--space-md); font-family: var(--font-heading); font-size: 14px;">Recent Executions</h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Function</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewRecentLogs">
+                  <tr><td colspan="4" style="text-align:center; color:var(--color-muted-foreground);">No executions yet</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. WORKSPACE VIEW (3-PANE) -->
+      <section class="view-page" id="view-workspace">
+        <div class="workspace-layout">
+          <!-- Tree Pane (Left) -->
+          <aside class="tree-pane">
+            <div class="pane-header">
+              <span data-i18n="scripts_tree">Packages & Scripts</span>
+              <button class="btn btn-outline btn-sm" id="btnNewScript" data-i18n="new_script">+ New</button>
+            </div>
+            <ul class="tree-list" id="scriptsTree"></ul>
+          </aside>
+
+          <!-- Editor Pane (Center) -->
+          <div class="editor-pane">
+            <div class="editor-toolbar">
+              <div class="editor-file-title" id="currentFileTitle">
+                <span>Select a script to edit</span>
+              </div>
+              <div class="editor-actions">
+                <button class="btn btn-secondary btn-sm" id="btnSaveScript" data-i18n="save_script">Save (Ctrl+S)</button>
+                <button class="btn btn-primary btn-sm" id="btnRunScript" data-i18n="run_script">Run (Ctrl+Enter)</button>
+              </div>
+            </div>
+
+            <div class="code-container">
+              <textarea class="code-editor" id="scriptEditor" spellcheck="false" placeholder="// Select or create a function to begin..."></textarea>
+            </div>
+
+            <!-- Output Console Drawer -->
+            <div class="output-drawer">
+              <div class="output-header">
+                <span data-i18n="output_console">Execution Output & Logs</span>
+                <span id="execDuration" style="color:var(--color-accent);">0ms</span>
+              </div>
+              <div class="output-content" id="outputConsole">Ready.</div>
+            </div>
+          </div>
+
+          <!-- Inspector Pane (Right) -->
+          <aside class="inspector-pane">
+            <div class="pane-header">
+              <span>Script Inspector</span>
+            </div>
+
+            <div class="inspector-section">
+              <span class="inspector-label">Function Metadata</span>
+              <div class="inspector-field">
+                <label style="font-size:11px; color:var(--color-muted-foreground);">Cron Schedule</label>
+                <input type="text" id="inspCronExpr" placeholder="* * * * * (optional)" readonly>
+                <span id="inspCronHuman" style="font-size:11px; color:var(--color-accent);"></span>
+              </div>
+              <div class="inspector-field" style="margin-top: 6px;">
+                <label style="font-size:11px; color:var(--color-muted-foreground);">MCP Export</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span id="inspMcpStatus" class="badge-status-success">Enabled</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="inspector-section">
+              <span class="inspector-label" data-i18n="test_payload">JSON Test Input</span>
+              <textarea class="form-textarea" id="inspTestPayload" rows="6" style="font-family:var(--font-heading); font-size:12px;">{}</textarea>
+            </div>
+
+            <div class="inspector-section">
+              <button class="btn btn-primary" id="btnRunInspector" style="width:100%;" data-i18n="run_script">Run (Ctrl+Enter)</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- 3. LOGS VIEW -->
+      <section class="view-page" id="view-logs">
+        <div class="logs-container">
+          <div class="logs-filter-bar">
+            <input type="text" id="logFilterFunc" placeholder="Filter by Function name..." style="max-width:250px;">
+            <select id="logFilterStatus" style="max-width:180px;">
+              <option value="" data-i18n="all_status">All Statuses</option>
+              <option value="success">Success</option>
+              <option value="error">Error</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btnRefreshLogs" data-i18n="refresh">Refresh</button>
+          </div>
+
+          <div class="stat-card" style="padding:0; overflow:hidden;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="col_time">Timestamp</th>
+                  <th data-i18n="col_func">Function</th>
+                  <th data-i18n="col_status">Status</th>
+                  <th data-i18n="col_duration">Duration</th>
+                  <th data-i18n="col_trigger">Trigger</th>
+                  <th data-i18n="col_details">Action</th>
+                </tr>
+              </thead>
+              <tbody id="logsTableBody">
+                <tr><td colspan="6" style="text-align:center;">No logs found</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. MCP HUB VIEW -->
+      <section class="view-page" id="view-mcp">
+        <div class="overview-container">
+          <div class="stat-card">
+            <h2 style="font-family:var(--font-heading); font-size:18px;" data-i18n="mcp_title">Model Context Protocol (MCP) Hub</h2>
+            <p style="color:var(--color-muted-foreground); margin-top:4px;" data-i18n="mcp_desc">
+              Export dynamic JavaScript functions as local or remote AI agent tools.
+            </p>
+          </div>
+
+          <div class="stat-card">
+            <h3 style="font-family:var(--font-heading); font-size:14px; margin-bottom:var(--space-sm);" data-i18n="mcp_stdio_cmd">StdIO Run Command</h3>
+            <div class="snippet-box">
+              <span id="mcpStdioCmd">actacron.exe mcp</span>
+              <button class="btn btn-outline btn-sm copy-btn" onclick="copyText('mcpStdioCmd')" data-i18n="copy_config">Copy Config</button>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <h3 style="font-family:var(--font-heading); font-size:14px; margin-bottom:var(--space-sm);" data-i18n="mcp_claude_cfg">Claude Desktop Configuration</h3>
+            <div class="snippet-box">
+              <span id="mcpClaudeCfg">{
+  "mcpServers": {
+    "actacron": {
+      "command": "actacron.exe",
+      "args": ["mcp"]
+    }
+  }
+}</span>
+              <button class="btn btn-outline btn-sm copy-btn" onclick="copyText('mcpClaudeCfg')" data-i18n="copy_config">Copy Config</button>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <h3 style="font-family:var(--font-heading); font-size:14px; margin-bottom:var(--space-sm);">Exported MCP Tools</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tool Name</th>
+                  <th>Description</th>
+                  <th>Parameters Schema</th>
+                </tr>
+              </thead>
+              <tbody id="mcpToolsTable">
+                <tr><td colspan="3" style="text-align:center;">No MCP tools exported yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. SETTINGS VIEW -->
+      <section class="view-page" id="view-settings">
+        <div class="settings-container">
+          <div class="settings-tabs-sidebar">
+            <button class="settings-tab-btn active" data-tab="general" data-i18n="settings_general">General</button>
+            <button class="settings-tab-btn" data-tab="git" data-i18n="settings_git">Git Credentials</button>
+            <button class="settings-tab-btn" data-tab="env" data-i18n="settings_env">Environment (.env)</button>
+            <button class="settings-tab-btn" data-tab="ui" data-i18n="settings_ui">UI & Appearance</button>
+          </div>
+
+          <div class="settings-tab-content">
+            <!-- General Tab -->
+            <div class="settings-panel active" id="panel-general">
+              <div class="form-group">
+                <label data-i18n="port_label">HTTP Server Port</label>
+                <input type="number" id="settingPort" value="8080">
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="timeout_label">Script Timeout (seconds)</label>
+                <input type="number" id="settingTimeout" value="30">
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="retention_label">Log Retention (days)</label>
+                <input type="number" id="settingRetention" value="7">
+              </div>
+
+              <div class="form-group">
+                <label class="switch-label">
+                  <div>
+                    <div style="font-weight:600;" data-i18n="autostart_label">Run on Windows Startup</div>
+                    <div class="form-help" data-i18n="autostart_desc">Add ActaCron background tray process to Windows Registry Run key.</div>
+                  </div>
+                  <input type="checkbox" class="switch-input" id="settingAutostart">
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="switch-label">
+                  <div>
+                    <div style="font-weight:600;" data-i18n="allow_shell_label">Allow Shell Commands</div>
+                    <div class="form-help" data-i18n="allow_shell_desc">Grant JS runtime access to invoke system CLI tools via exec().</div>
+                  </div>
+                  <input type="checkbox" class="switch-input" id="settingAllowShell">
+                </label>
+              </div>
+
+              <button class="btn btn-primary" id="btnSaveGeneral" data-i18n="save_general">Save General Settings</button>
+            </div>
+
+            <!-- Git Tab -->
+            <div class="settings-panel" id="panel-git">
+              <div class="form-group">
+                <label data-i18n="git_author_name">Git Author Name</label>
+                <input type="text" id="settingGitAuthor" placeholder="ActaCron Bot">
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="git_author_email">Git Author Email</label>
+                <input type="text" id="settingGitEmail" placeholder="bot@actacron.local">
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="git_token">Personal Access Token (PAT)</label>
+                <input type="password" id="settingGitToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                <div class="form-help" data-i18n="git_token_desc">Used for HTTPS authenticated Git fetch & push.</div>
+              </div>
+
+              <button class="btn btn-primary" id="btnSaveGit" data-i18n="save_git">Save Git Settings</button>
+            </div>
+
+            <!-- Env Tab -->
+            <div class="settings-panel" id="panel-env">
+              <p class="form-help" data-i18n="env_desc">
+                Configure shared environment variables accessible to all scripts via env("KEY").
+              </p>
+              <div class="env-table" id="envTableRows"></div>
+              <div style="display:flex; gap:var(--space-md); margin-top:var(--space-md);">
+                <button class="btn btn-secondary btn-sm" id="btnAddEnvRow" data-i18n="add_env_var">+ Add Variable</button>
+                <button class="btn btn-primary btn-sm" id="btnSaveEnv" data-i18n="save_env">Save .env File</button>
+              </div>
+            </div>
+
+            <!-- UI & Appearance Tab -->
+            <div class="settings-panel" id="panel-ui">
+              <div class="form-group">
+                <label data-i18n="ui_lang_label">Display Language</label>
+                <select id="uiLangSelect">
+                  <option value="en">English (Default)</option>
+                  <option value="vi">Tiếng Việt (Vietnamese)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="ui_theme_label">Accent Color Theme</label>
+                <select id="uiThemeSelect">
+                  <option value="emerald" data-i18n="ui_theme_emerald">Emerald Green (Run)</option>
+                  <option value="blue" data-i18n="ui_theme_blue">Cyber Blue</option>
+                  <option value="purple" data-i18n="ui_theme_purple">Neon Purple</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="ui_density_label">Interface Density</label>
+                <select id="uiDensitySelect">
+                  <option value="normal" data-i18n="ui_density_normal">Balanced (Default)</option>
+                  <option value="compact" data-i18n="ui_density_compact">Compact (Dense)</option>
+                  <option value="spacious" data-i18n="ui_density_spacious">Spacious</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label data-i18n="ui_font_size_label">Code Editor Font Size</label>
+                <select id="uiFontSizeSelect">
+                  <option value="12px">12 px (Small)</option>
+                  <option value="13.5px">13.5 px (Normal)</option>
+                  <option value="15px">15 px (Large)</option>
+                  <option value="16px">16 px (Extra Large)</option>
+                </select>
+              </div>
+
+              <button class="btn btn-primary" id="btnSaveUI" data-i18n="save_ui">Save Appearance Settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal Log Details -->
+  <div class="modal-overlay" id="modalLog">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span id="modalLogTitle">Execution Log Details</span>
+        <button class="btn btn-outline btn-sm" id="btnCloseLogModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="snippet-box" id="modalLogOutput"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btnCloseLogModalBtn" data-i18n="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal New Script -->
+  <div class="modal-overlay" id="modalNewScript">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span data-i18n="new_script">New Script</span>
+        <button class="btn btn-outline btn-sm" id="btnCloseNewScript">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Package Name</label>
+          <input type="text" id="newScriptPkg" value="default">
+        </div>
+        <div class="form-group">
+          <label>Script File Name</label>
+          <input type="text" id="newScriptFile" placeholder="my_task.js">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btnCancelNewScript" data-i18n="close">Close</button>
+        <button class="btn btn-primary btn-sm" id="btnConfirmNewScript">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
