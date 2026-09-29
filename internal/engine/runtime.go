@@ -49,6 +49,17 @@ func (r *Runner) Execute(
 	code string,
 	params interface{},
 ) (*ExecutionResult, error) {
+	return r.ExecuteWithSetup(ctx, pkgName, scriptPath, code, params, nil)
+}
+
+func (r *Runner) ExecuteWithSetup(
+	ctx context.Context,
+	pkgName string,
+	scriptPath string,
+	code string,
+	params interface{},
+	setupFn func(*goja.Runtime),
+) (*ExecutionResult, error) {
 	startTime := time.Now()
 	var consoleLogs []string
 
@@ -67,6 +78,10 @@ func (r *Runner) Execute(
 	allowShell := r.allowShell
 	r.mu.RUnlock()
 	registerExec(vm, allowShell)
+
+	if setupFn != nil {
+		setupFn(vm)
+	}
 
 	// Timeout / cancellation guard
 	done := make(chan struct{})
