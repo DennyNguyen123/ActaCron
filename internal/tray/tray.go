@@ -57,6 +57,7 @@ func (th *TrayHandler) onReady() {
 		for {
 			select {
 			case <-mOpen.ClickedCh:
+				log.Printf("[Tray] Open Dashboard clicked: launching %s", th.dashboardURL)
 				if err := OpenDashboard(th.dashboardURL); err != nil {
 					log.Printf("[Tray] Failed to open dashboard: %v", err)
 				}

@@ -12,6 +12,8 @@ import (
 func OpenDashboard(url string) error {
 	if runtime.GOOS == "windows" {
 		edgePaths := []string{
+			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+			`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
 			filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
 			filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
 			filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
@@ -23,13 +25,14 @@ func OpenDashboard(url string) error {
 			}
 			if _, err := os.Stat(path); err == nil {
 				cmd := exec.Command(path, "--app="+url)
-				return cmd.Start()
+				if err := cmd.Start(); err == nil {
+					return nil
+				}
 			}
 		}
 
-		// Fallback on Windows
-		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		return cmd.Start()
+		// Fallback to default browser via cmd start
+		return exec.Command("cmd", "/c", "start", "", url).Start()
 	}
 
 	// Non-Windows fallbacks
