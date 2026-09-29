@@ -38,6 +38,7 @@ func NewRouter(
 	mux.HandleFunc("/api/packages", handler.handleListPackages)
 	mux.HandleFunc("/api/packages/clone", handler.handleGitClone)
 	mux.HandleFunc("/api/packages/pull", handler.handleGitPull)
+	mux.HandleFunc("/api/packages/sync", handler.handleGitSyncAll)
 	mux.HandleFunc("/api/packages/commit", handler.handleGitCommit)
 
 	mux.HandleFunc("/api/functions", handler.handleListFunctions)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
@@ -96,13 +97,23 @@ func (h *APIHandler) handleGitClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetPath := fmt.Sprintf("packages/%s", req.TargetName)
-	if err := h.gitSvc.Clone(req.URL, targetPath, req.Branch, req.Token); err != nil {
+	token := req.Token
+	if token == "" && h.settingsSvc != nil {
+		if cfg, err := h.settingsSvc.Get(); err == nil {
+			token = cfg.GitDefaultToken
+		}
+	}
+
+	targetPath := filepath.Join(h.mgr.PackagesDir(), req.TargetName)
+	if err := h.gitSvc.Clone(req.URL, targetPath, req.Branch, token); err != nil {
 		writeError(w, http.StatusInternalServerError, "clone failed: "+err.Error())
 		return
 	}
 
 	h.mgr.Reload()
+	if h.sched != nil {
+		h.sched.Reschedule()
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cloned"})
 }
 
@@ -122,14 +133,64 @@ func (h *APIHandler) handleGitPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.gitSvc.Pull(pkg.Path, req.Token)
+	token := req.Token
+	if token == "" && h.settingsSvc != nil {
+		if cfg, err := h.settingsSvc.Get(); err == nil {
+			token = cfg.GitDefaultToken
+		}
+	}
+
+	res, err := h.gitSvc.Pull(pkg.Path, token)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "pull failed: "+err.Error())
 		return
 	}
 
 	h.mgr.Reload()
+	if h.sched != nil {
+		h.sched.Reschedule()
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": res})
+}
+
+func (h *APIHandler) handleGitSyncAll(w http.ResponseWriter, r *http.Request) {
+	if h.mgr == nil || h.gitSvc == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"synced": 0, "message": "manager not ready"})
+		return
+	}
+
+	token := ""
+	if h.settingsSvc != nil {
+		if cfg, err := h.settingsSvc.Get(); err == nil {
+			token = cfg.GitDefaultToken
+		}
+	}
+
+	packages := h.mgr.ListPackages()
+	syncedCount := 0
+	var results []string
+
+	for _, pkg := range packages {
+		if pkg.IsGit {
+			res, err := h.gitSvc.Pull(pkg.Path, token)
+			if err != nil {
+				results = append(results, fmt.Sprintf("%s: %v", pkg.Name, err))
+			} else {
+				results = append(results, fmt.Sprintf("%s: %s", pkg.Name, res))
+				syncedCount++
+			}
+		}
+	}
+
+	h.mgr.Reload()
+	if h.sched != nil {
+		h.sched.Reschedule()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"synced":  syncedCount,
+		"results": results,
+	})
 }
 
 func (h *APIHandler) handleGitCommit(w http.ResponseWriter, r *http.Request) {

@@ -16,3 +16,4 @@ data/*.db-journal
 Thumbs.db
 .vscode/
 .idea/
+actacron.db

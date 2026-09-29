@@ -518,6 +518,8 @@
         const envMap = envData.env || {};
         Object.keys(envMap).forEach(k => addEnvRow(k, envMap[k]));
       }
+
+      await loadGitPackages();
     } catch (err) {
       console.error("Failed to load settings", err);
     }
@@ -621,22 +623,115 @@
     }
   }
 
+  async function loadGitPackages() {
+    const tbody = document.getElementById("gitPackagesTableBody");
+    if (!tbody) return;
+    try {
+      const res = await fetch("/api/packages");
+      if (!res.ok) return;
+      const pkgs = await res.json();
+      tbody.innerHTML = "";
+
+      if (!pkgs || pkgs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--color-muted-foreground);">No packages found</td></tr>';
+        return;
+      }
+
+      pkgs.forEach(p => {
+        const tr = document.createElement("tr");
+        const typeBadge = p.is_git 
+          ? '<span class="badge-status-success">Git Repo</span>' 
+          : '<span style="color:var(--color-muted-foreground); font-size:11px;">Local Folder</span>';
+        
+        let actionBtns = "";
+        if (p.is_git) {
+          actionBtns = `
+            <button class="btn btn-secondary btn-sm" onclick="pullPackage('${p.name}')">Pull</button>
+            <button class="btn btn-outline btn-sm" onclick="commitPackagePrompt('${p.name}')">Commit</button>
+          `;
+        } else {
+          actionBtns = `<span style="font-size:11px; color:var(--color-muted-foreground);">Manual edit</span>`;
+        }
+
+        tr.innerHTML = `
+          <td><strong>${p.name}</strong></td>
+          <td>${typeBadge}</td>
+          <td><code>${p.status || "clean"}</code></td>
+          <td>${actionBtns}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error("Failed to load git packages", err);
+    }
+  }
+
+  window.pullPackage = async function (pkgName) {
+    try {
+      const res = await fetch("/api/packages/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package_name: pkgName })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Package '${pkgName}': ${data.status}`);
+        await loadFunctions();
+        await loadGitPackages();
+      } else {
+        alert(`Pull error: ${data.error || "Unknown"}`);
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+    }
+  };
+
+  window.commitPackagePrompt = async function (pkgName) {
+    const msg = prompt(`Enter commit message for '${pkgName}':`, "Update scripts via ActaCron");
+    if (!msg) return;
+
+    try {
+      const res = await fetch("/api/packages/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          package_name: pkgName,
+          message: msg
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Package '${pkgName}' committed and pushed successfully.`);
+        await loadGitPackages();
+      } else {
+        alert(`Commit error: ${data.error || "Unknown"}`);
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+    }
+  };
+
   async function syncAllGit() {
     try {
       const btn = document.getElementById("btnSyncAll");
       btn.textContent = "Syncing...";
       btn.disabled = true;
-      const res = await fetch("/api/packages/pull", {
+      const res = await fetch("/api/packages/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_name: "default" })
+        headers: { "Content-Type": "application/json" }
       });
       if (res.ok) {
-        alert("Git sync executed successfully.");
+        const data = await res.json();
+        if (data.synced > 0) {
+          alert(`Synced ${data.synced} Git repository(s):\n` + (data.results || []).join("\n"));
+        } else {
+          alert("No Git repositories configured to sync.\nTo link a repository, go to Settings > Git Credentials > Clone Repository.");
+        }
         await loadFunctions();
+        await loadGitPackages();
       } else {
         const err = await res.json();
-        alert("Git sync result: " + (err.error || "Done"));
+        alert("Git sync error: " + (err.error || "Unknown"));
       }
     } catch (err) {
       alert("Network error: " + err.message);
@@ -699,6 +794,60 @@ function main(params) {
         }
       } catch (err) {
         alert("Error creating script: " + err.message);
+      }
+    });
+
+    // Git Clone Modal
+    const modalClone = document.getElementById("modalGitClone");
+    const openCloneHandler = () => modalClone.classList.add("open");
+    const btnOpenClone = document.getElementById("btnOpenCloneModal");
+    if (btnOpenClone) btnOpenClone.addEventListener("click", openCloneHandler);
+    const btnOpenCloneSettings = document.getElementById("btnOpenCloneFromSettings");
+    if (btnOpenCloneSettings) btnOpenCloneSettings.addEventListener("click", openCloneHandler);
+
+    document.getElementById("btnCloseGitClone").addEventListener("click", () => modalClone.classList.remove("open"));
+    document.getElementById("btnCancelGitClone").addEventListener("click", () => modalClone.classList.remove("open"));
+
+    document.getElementById("btnConfirmGitClone").addEventListener("click", async () => {
+      const url = document.getElementById("cloneRepoUrl").value.trim();
+      const target = document.getElementById("clonePkgName").value.trim();
+      const branch = document.getElementById("cloneBranch").value.trim();
+      const token = document.getElementById("cloneToken").value.trim();
+
+      if (!url || !target) {
+        alert("Please provide Git Repository URL and Package Name.");
+        return;
+      }
+
+      const btn = document.getElementById("btnConfirmGitClone");
+      btn.textContent = "Cloning...";
+      btn.disabled = true;
+
+      try {
+        const res = await fetch("/api/packages/clone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: url,
+            target_name: target,
+            branch: branch,
+            token: token
+          })
+        });
+        if (res.ok) {
+          alert(`Successfully cloned repository '${target}'!`);
+          modalClone.classList.remove("open");
+          await loadFunctions();
+          await loadGitPackages();
+        } else {
+          const err = await res.json();
+          alert("Failed to clone: " + (err.error || "Unknown error"));
+        }
+      } catch (err) {
+        alert("Clone error: " + err.message);
+      } finally {
+        btn.textContent = "Clone Repository";
+        btn.disabled = false;
       }
     });
   }

@@ -136,7 +136,10 @@
           <aside class="tree-pane">
             <div class="pane-header">
               <span data-i18n="scripts_tree">Packages & Scripts</span>
-              <button class="btn btn-outline btn-sm" id="btnNewScript" data-i18n="new_script">+ New</button>
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-outline btn-sm" id="btnNewScript" data-i18n="new_script">+ Script</button>
+                <button class="btn btn-outline btn-sm" id="btnOpenCloneModal">+ Git</button>
+              </div>
             </div>
             <ul class="tree-list" id="scriptsTree"></ul>
           </aside>
@@ -354,6 +357,30 @@
               </div>
 
               <button class="btn btn-primary" id="btnSaveGit" data-i18n="save_git">Save Git Settings</button>
+
+              <hr style="border:none; border-top:1px solid var(--color-border); margin:var(--space-md) 0;">
+
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="font-family:var(--font-heading); font-size:14px;">Git Repositories (Packages)</h3>
+                <button class="btn btn-secondary btn-sm" id="btnOpenCloneFromSettings">+ Clone Repository</button>
+              </div>
+              <p class="form-help">Manage script packages synced with remote Git repositories (GitHub / GitLab).</p>
+
+              <div class="stat-card" style="padding:0; overflow:hidden;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Package</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gitPackagesTableBody">
+                    <tr><td colspan="4" style="text-align:center;">Loading packages...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <!-- Env Tab -->
@@ -450,6 +477,38 @@
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" id="btnCancelNewScript" data-i18n="close">Close</button>
         <button class="btn btn-primary btn-sm" id="btnConfirmNewScript">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Git Clone -->
+  <div class="modal-overlay" id="modalGitClone">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span>Clone Git Repository</span>
+        <button class="btn btn-outline btn-sm" id="btnCloseGitClone">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Git Repository URL</label>
+          <input type="text" id="cloneRepoUrl" placeholder="https://github.com/username/repository.git">
+        </div>
+        <div class="form-group">
+          <label>Package Folder Name</label>
+          <input type="text" id="clonePkgName" placeholder="my-scripts">
+        </div>
+        <div class="form-group">
+          <label>Branch (Optional)</label>
+          <input type="text" id="cloneBranch" placeholder="main">
+        </div>
+        <div class="form-group">
+          <label>Access Token (Optional if saved in Settings)</label>
+          <input type="password" id="cloneToken" placeholder="Leave blank to use saved PAT">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btnCancelGitClone" data-i18n="close">Close</button>
+        <button class="btn btn-primary btn-sm" id="btnConfirmGitClone">Clone Repository</button>
       </div>
     </div>
   </div>

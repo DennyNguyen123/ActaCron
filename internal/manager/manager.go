@@ -47,6 +47,10 @@ func New(packagesDir string, runner *engine.Runner, db *storage.DB) *Manager {
 	}
 }
 
+func (m *Manager) PackagesDir() string {
+	return m.packagesDir
+}
+
 func (m *Manager) Reload() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
