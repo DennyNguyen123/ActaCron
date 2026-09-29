@@ -212,7 +212,7 @@ git commit -m "feat(core): initialize go module, domain models, and config loade
 
 **Interfaces:**
 - Consumes: `modernc.org/sqlite`, `domain.ExecutionLog`
-- Produces: `storage.DB` (InsertLog, QueryLogs, SetState, GetState, SetKV, GetKV, DeleteOldLogs)
+- Produces: `storage.DB` (InsertLog, QueryLogs, SetState, GetState, SetKV, GetKV, SetSetting, GetSetting, GetAllSettings, DeleteOldLogs)
 
 - [ ] **Step 1: Write failing test for SQLite operations**
 
@@ -270,6 +270,15 @@ func TestSQLite(t *testing.T) {
 	val, err := db.GetKV("dev-utils", "cursor")
 	if err != nil || val != "100" {
 		t.Fatalf("expected '100', got '%s', err: %v", val, err)
+	}
+
+	// Test Settings Store
+	if err := db.SetSetting("theme_accent", "#22C55E"); err != nil {
+		t.Fatalf("set setting failed: %v", err)
+	}
+	accent, err := db.GetSetting("theme_accent")
+	if err != nil || accent != "#22C55E" {
+		t.Fatalf("expected '#22C55E', got '%s', err: %v", accent, err)
 	}
 }
 ```
@@ -839,7 +848,219 @@ git commit -m "feat(git): implement multi-repo git operations via pure Go go-git
 
 ---
 
-### Task 9: REST API & Web Asset Embedding
+### Task 9: App Settings & Environment Manager (Backend & Windows Registry)
+
+**Files:**
+- Create: `internal/settings/settings.go`
+- Create: `internal/settings/dotenv.go`
+- Create: `internal/settings/autostart_windows.go`
+- Create: `internal/settings/autostart_other.go`
+- Test: `internal/settings/settings_test.go`
+- Test: `internal/settings/dotenv_test.go`
+
+**Interfaces:**
+- Consumes: `storage.DB`
+- Produces: `settings.Service` (GetSettings, SaveSettings, SetAutoStart, GetEnv, SaveEnv)
+
+- [ ] **Step 1: Write failing test for settings service and dotenv parser**
+
+```go
+package settings_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"actacron/internal/settings"
+	"actacron/internal/storage"
+)
+
+func TestDotEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	envPath := filepath.Join(tmpDir, ".env")
+
+	initialContent := "API_KEY=secret_123\nPORT=8080\n# comment\nDEBUG=true\n"
+	os.WriteFile(envPath, []byte(initialContent), 0644)
+
+	envMap, err := settings.ReadEnv(envPath)
+	if err != nil {
+		t.Fatalf("read env failed: %v", err)
+	}
+	if envMap["API_KEY"] != "secret_123" || envMap["PORT"] != "8080" {
+		t.Fatalf("unexpected env map: %v", envMap)
+	}
+
+	envMap["API_KEY"] = "updated_token"
+	envMap["NEW_VAR"] = "val"
+	if err := settings.WriteEnv(envPath, envMap); err != nil {
+		t.Fatalf("write env failed: %v", err)
+	}
+
+	updated, _ := settings.ReadEnv(envPath)
+	if updated["API_KEY"] != "updated_token" || updated["NEW_VAR"] != "val" {
+		t.Fatalf("expected updated env, got: %v", updated)
+	}
+}
+
+func TestAppSettings(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "settings.db")
+	db, _ := storage.New(dbFile)
+	defer db.Close()
+
+	svc := settings.New(db, filepath.Join(tmpDir, ".env"))
+	cfg, err := svc.Get()
+	if err != nil {
+		t.Fatalf("get settings failed: %v", err)
+	}
+	if cfg.Port != 8080 {
+		t.Fatalf("expected default port 8080, got %d", cfg.Port)
+	}
+
+	cfg.ThemeAccent = "#38BDF8"
+	cfg.Density = "compact"
+	cfg.EditorFontSize = 16
+	if err := svc.Save(cfg); err != nil {
+		t.Fatalf("save settings failed: %v", err)
+	}
+
+	reloaded, _ := svc.Get()
+	if reloaded.ThemeAccent != "#38BDF8" || reloaded.Density != "compact" || reloaded.EditorFontSize != 16 {
+		t.Fatalf("expected saved theme settings, got: %+v", reloaded)
+	}
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `go test ./internal/settings/... -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement Settings and Dotenv Manager**
+
+Create `internal/settings/dotenv.go`:
+- `ReadEnv(filePath string) (map[string]string, error)`: Parses key=value pairs, ignores comments.
+- `WriteEnv(filePath string, data map[string]string) error`: Serializes key=value pairs cleanly.
+
+Create `internal/settings/autostart_windows.go` (and `autostart_other.go` with build tags `//go:build windows` vs `//go:build !windows`):
+- `SetAutoStart(appName, exePath string, enable bool) error`:
+  Uses Windows registry `golang.org/x/sys/windows/registry` to set or delete `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ActaCron`.
+
+Create `internal/settings/settings.go`:
+- Struct `AppSettings`:
+  ```go
+  type AppSettings struct {
+      Port              int    `json:"port"`
+      TimeoutSeconds    int    `json:"timeout_seconds"`
+      LogRetentionDays  int    `json:"log_retention_days"`
+      StartWithWindows  bool   `json:"start_with_windows"`
+      AllowShellExec    bool   `json:"allow_shell_exec"`
+      WindowMode        string `json:"window_mode"` // "edge_app", "browser", "none"
+      GitAuthorName     string `json:"git_author_name"`
+      GitAuthorEmail    string `json:"git_author_email"`
+      GitDefaultToken   string `json:"git_default_token"`
+      NotifyOnFailure   bool   `json:"notify_on_failure"`
+      ThemeAccent       string `json:"theme_accent"`   // default: #22C55E
+      Density           string `json:"density"`        // compact, normal, spacious
+      EditorFontSize    int    `json:"editor_font_size"` // 12, 14, 16
+  }
+  ```
+- Reads defaults, overlays SQLite `app_settings` values.
+- `Save(settings AppSettings) error`: Writes each setting to SQLite, invokes `SetAutoStart`.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `go test ./internal/settings/... -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add internal/settings/settings.go internal/settings/dotenv.go internal/settings/autostart_windows.go internal/settings/autostart_other.go internal/settings/settings_test.go internal/settings/dotenv_test.go
+git commit -m "feat(settings): implement app configuration, dotenv manager, and windows startup registry helper"
+```
+
+---
+
+### Task 10: Multi-Git Manager
+
+**Files:**
+- Create: `internal/gitmgr/git.go`
+- Test: `internal/gitmgr/git_test.go`
+
+**Interfaces:**
+- Consumes: `github.com/go-git/go-git/v5`
+- Produces: `gitmgr.GitService` (Clone, Pull, CommitAndPush, GetStatus)
+
+- [ ] **Step 1: Write failing test for Git operations**
+
+```go
+package gitmgr_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"actacron/internal/gitmgr"
+	"github.com/go-git/go-git/v5"
+)
+
+func TestGitStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "repo")
+	_, err := git.PlainInit(repoDir, false)
+	if err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+
+	svc := gitmgr.New()
+	status, err := svc.GetStatus(repoDir)
+	if err != nil {
+		t.Fatalf("get status failed: %v", err)
+	}
+	if status != "clean" {
+		t.Fatalf("expected clean, got %s", status)
+	}
+
+	// Add file
+	os.WriteFile(filepath.Join(repoDir, "test.js"), []byte("console.log(1)"), 0644)
+	status, _ = svc.GetStatus(repoDir)
+	if status != "modified" {
+		t.Fatalf("expected modified, got %s", status)
+	}
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `go test ./internal/gitmgr/... -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement Git service with go-git**
+
+Create `internal/gitmgr/git.go`:
+- `Clone(url, targetPath, branch, auth) error`
+- `Pull(repoPath, auth) (string, error)`
+- `CommitAndPush(repoPath, message, auth) error`
+- `GetStatus(repoPath) (string, error)`
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `go test ./internal/gitmgr/... -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add internal/gitmgr/git.go internal/gitmgr/git_test.go
+git commit -m "feat(git): implement multi-repo git operations via pure Go go-git"
+```
+
+---
+
+### Task 11: REST API & Routing
 
 **Files:**
 - Create: `internal/api/router.go`
@@ -847,7 +1068,7 @@ git commit -m "feat(git): implement multi-repo git operations via pure Go go-git
 - Test: `internal/api/api_test.go`
 
 **Interfaces:**
-- Consumes: `manager.Manager`, `scheduler.Scheduler`, `storage.DB`, `gitmgr.GitService`
+- Consumes: `manager.Manager`, `scheduler.Scheduler`, `storage.DB`, `gitmgr.GitService`, `settings.Service`
 - Produces: `http.Handler` for API endpoints and embedded static UI
 
 - [ ] **Step 1: Write failing test for API endpoints**
@@ -864,7 +1085,7 @@ import (
 )
 
 func TestHealthAndPackagesAPI(t *testing.T) {
-	router := api.NewRouter(nil, nil, nil, nil, nil)
+	router := api.NewRouter(nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(router)
 	defer ts.Close()
 
@@ -889,7 +1110,8 @@ Create `internal/api/router.go` and `internal/api/handlers.go`:
 - `/api/run`: Test run a function with JSON input, returns output & logs.
 - `/api/cron`: List cron schedules, toggle enable, force-run.
 - `/api/logs`: Query logs with filters (funcName, status, limit, offset).
-- `/api/env`: Get and save `.env` key-values.
+- `/api/settings`: GET and POST application settings.
+- `/api/env`: GET and POST `.env` key-values.
 - `/api/mcp/tools`: List MCP tools and Claude/Cursor config snippets.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -901,12 +1123,12 @@ Expected: PASS
 
 ```powershell
 git add internal/api/router.go internal/api/handlers.go internal/api/api_test.go
-git commit -m "feat(api): implement REST API endpoints for packages, functions, cron, and logs"
+git commit -m "feat(api): implement REST API endpoints for packages, functions, cron, settings, and logs"
 ```
 
 ---
 
-### Task 10: Embedded Web Dashboard (UI-UX-Pro-Max Dark OLED)
+### Task 12: Embedded Web Dashboard & UI Config (UI-UX-Pro-Max Dark OLED)
 
 **Files:**
 - Create: `web/index.html`
@@ -916,7 +1138,7 @@ git commit -m "feat(api): implement REST API endpoints for packages, functions, 
 - Test: `web/embed_test.go`
 
 **Interfaces:**
-- Consumes: REST API (`/api/...`)
+- Consumes: REST API (`/api/...`), `design-system/actacron/MASTER.md`
 - Produces: Embedded SPA assets served via `//go:embed`
 
 - [ ] **Step 1: Write failing test for embedded assets**
@@ -943,7 +1165,7 @@ func TestEmbeddedFiles(t *testing.T) {
 Run: `go test ./web/... -v`
 Expected: FAIL
 
-- [ ] **Step 3: Build the Dark OLED UI Dashboard**
+- [ ] **Step 3: Build the Dark OLED UI Dashboard with Theme Customization**
 
 1. `web/embed.go`:
 ```go
@@ -956,15 +1178,31 @@ var Assets embed.FS
 ```
 
 2. `web/css/style.css`:
-Implement tokens: `--bg: #0F172A`, `--card: #1B2336`, `--border: #334155`, `--accent: #22C55E`, `--error: #EF4444`, `--warn: #F59E0B`.
-Implement 3-Pane layout: Left tree (260px), Center code editor (flex), Right inspector (360px).
-Log table, chips filter, and slide-in drawer.
+Implement Master tokens from `design-system/actacron/MASTER.md`:
+- CSS Variables: `--color-background: #0F172A`, `--color-card: #1B2336`, `--color-border: #334155`, `--color-accent: #22C55E`, `--color-destructive: #EF4444`, `--color-muted: #94A3B8`.
+- Dynamic Customization tokens:
+  - Theme Accent override: `[data-theme="emerald"] { --color-accent: #22C55E; }`, `[data-theme="blue"] { --color-accent: #38BDF8; }`, `[data-theme="purple"] { --color-accent: #A855F7; }`.
+  - Density override: `[data-density="compact"] { --space-unit: 4px; }`, `[data-density="spacious"] { --space-unit: 8px; }`.
+  - Font Size override: `--editor-font-size: 14px`.
+- 3-Pane layout: Left tree (260px), Center code editor (flex), Right inspector (360px).
+- Log table with quick chips filter and slide-in drawer.
+- Settings Screen layout: 4 tabs (General, Git, Environment Variables, UI & Appearance).
 
 3. `web/index.html`:
-Semantic markup with Navigation (Overview, Workspace, Logs, MCP Hub, Settings), header metrics, and modal dialogs for Git commit and template creation.
+- Semantic layout: Sidebar Navigation (Overview, Workspace, Logs, MCP Hub, Settings).
+- Top header metrics: System status badge, RAM usage, active cron countdown, Sync All button.
+- Workspace: Tree view, Code editor with live metadata chips, Inspector with Test Runner & Schedule toggle.
+- Settings Screen:
+  - Tab 1: General (Port, Timeout, Log Retention, Run on Startup switch, Allow Shell switch).
+  - Tab 2: Git Credentials (Author Name, Author Email, Token).
+  - Tab 3: Environment (.env Key-Value Editor with mask toggle).
+  - Tab 4: UI & Appearance (Accent color picker, density scale selector, editor font size).
 
 4. `web/js/app.js`:
-SPA routing, CodeJar / custom syntax-highlighted editor, keyboard shortcuts (`Ctrl+S`, `Ctrl+Enter`), API fetch calls, live log viewer, and 1-click MCP config copy.
+- Client-side router for tabs.
+- Dynamic theme injector: applies `data-theme`, `data-density`, and font size immediately upon selection and syncs with `/api/settings`.
+- Code editor with syntax coloring, line numbers, and keyboard shortcuts (`Ctrl+S`, `Ctrl+Enter`).
+- Real-time test runner and live logs viewer.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -975,12 +1213,12 @@ Expected: PASS
 
 ```powershell
 git add web/index.html web/css/style.css web/js/app.js web/embed.go web/embed_test.go
-git commit -m "feat(ui): implement embedded Dark OLED 3-pane Web UI dashboard"
+git commit -m "feat(ui): implement embedded Dark OLED 3-pane dashboard with full App Settings and UI theme config"
 ```
 
 ---
 
-### Task 11: Windows System Tray & Lifecycle
+### Task 13: Windows System Tray & Lifecycle
 
 **Files:**
 - Create: `internal/tray/tray.go`
@@ -988,19 +1226,20 @@ git commit -m "feat(ui): implement embedded Dark OLED 3-pane Web UI dashboard"
 - Create: `main.go`
 
 **Interfaces:**
-- Consumes: `github.com/getlantern/systray`, `api.Router`, `scheduler.Scheduler`
+- Consumes: `github.com/getlantern/systray`, `api.Router`, `scheduler.Scheduler`, `settings.Service`
 - Produces: CLI commands: `actacron daemon` (default) and `actacron mcp`
 
 - [ ] **Step 1: Write window launcher and tray handler**
 
 Create `internal/tray/window.go`:
 - Finds Microsoft Edge (`msedge.exe`) or defaults to standard browser open.
-- Launches `msedge.exe --app=http://127.0.0.1:8080`.
+- Launches `msedge.exe --app=http://127.0.0.1:8080` (or browser tab based on `window_mode` setting).
 
 Create `internal/tray/tray.go`:
 - Initializes systray icon and tooltip.
 - Menu items: Open Dashboard, Sync All Git, Pause/Resume Cron, View Logs, Exit.
 - Left-click on tray icon triggers window launch.
+- Provides balloon / toast notification method `Notify(title, message string)`.
 
 - [ ] **Step 2: Implement main.go CLI entrypoint**
 
@@ -1018,18 +1257,18 @@ Expected: Builds `actacron.exe` cleanly.
 
 ```powershell
 git add internal/tray/tray.go internal/tray/window.go main.go
-git commit -m "feat(tray): implement Windows System Tray daemon and Edge app window launcher"
+git commit -m "feat(tray): implement Windows System Tray daemon, Edge app window launcher, and notification helper"
 ```
 
 ---
 
-### Task 12: End-to-End Integration Verification
+### Task 14: End-to-End Integration Verification
 
 **Files:**
 - Create: `tests/e2e/e2e_test.go`
 
 **Interfaces:**
-- Consumes: Complete ActaCron stack
+- Consumes: Complete ActaCron stack (Engine, Manager, Storage, Settings, Scheduler, API)
 - Produces: End-to-end integration pass report
 
 - [ ] **Step 1: Write end-to-end integration test**
@@ -1047,6 +1286,7 @@ import (
 	"actacron/internal/engine"
 	"actacron/internal/manager"
 	"actacron/internal/scheduler"
+	"actacron/internal/settings"
 	"actacron/internal/storage"
 )
 
@@ -1062,6 +1302,15 @@ func TestEndToEndPipeline(t *testing.T) {
 	runner := engine.New(db, 10, false)
 	mgr := manager.New(tmpDir, runner, db)
 
+	// Test settings
+	envPath := filepath.Join(tmpDir, ".env")
+	os.WriteFile(envPath, []byte("GREET_PREFIX=Hello"), 0644)
+	settingsSvc := settings.New(db, envPath)
+
+	cfg, _ := settingsSvc.Get()
+	cfg.ThemeAccent = "#22C55E"
+	settingsSvc.Save(cfg)
+
 	// Create a test function with cron & mcp metadata
 	pkgDir := filepath.Join(tmpDir, "testpkg")
 	os.MkdirAll(pkgDir, 0755)
@@ -1072,9 +1321,11 @@ func TestEndToEndPipeline(t *testing.T) {
  * @param {string} name - Target name
  */
 function main(params) {
-	console.log("Greeting:", params.name);
-	storage.set("last_greet", params.name);
-	return "Hello " + params.name;
+	const prefix = env("GREET_PREFIX") || "Hi";
+	const res = prefix + " " + params.name;
+	console.log("Greeting generated:", res);
+	storage.set("last_greet", res);
+	return res;
 }`
 	os.WriteFile(filepath.Join(pkgDir, "greet.js"), []byte(scriptContent), 0644)
 
@@ -1104,8 +1355,14 @@ function main(params) {
 
 	// Verify KV state
 	stored, err := db.GetKV("testpkg", "last_greet")
-	if err != nil || stored != "Antigravity" {
-		t.Fatalf("expected KV 'Antigravity', got '%s'", stored)
+	if err != nil || stored != "Hello Antigravity" {
+		t.Fatalf("expected KV 'Hello Antigravity', got '%s'", stored)
+	}
+
+	// Verify settings persisted
+	reloadedCfg, _ := settingsSvc.Get()
+	if reloadedCfg.ThemeAccent != "#22C55E" {
+		t.Fatalf("expected accent #22C55E, got %s", reloadedCfg.ThemeAccent)
 	}
 }
 ```
@@ -1119,5 +1376,6 @@ Expected: PASS
 
 ```powershell
 git add tests/e2e/e2e_test.go
-git commit -m "test(e2e): add end-to-end integration test validating engine, storage, and metadata"
+git commit -m "test(e2e): add end-to-end integration test validating engine, settings, storage, and metadata"
 ```
+

@@ -246,6 +246,12 @@ CREATE TABLE IF NOT EXISTS key_value_store (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (package_name, store_key)
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ### 8.1 Log Retention Policy
@@ -311,10 +317,25 @@ The interface uses a **3-Pane IDE Layout** within a clean Windows App Window:
    - 1-Click buttons: **"Copy Claude Desktop Config"** and **"Copy Cursor Config"**.
    - Interactive Tool Tester.
 4. **Settings & Environment Screen:**
-   - Key-Value `.env` editor with hide/show toggles for secret values.
-   - Git authentication settings (Default PAT, SSH keys).
-   - "Start with Windows" toggle switch (updates Windows Run Registry).
-   - Shell execution security toggle.
+   - **Tab 1: General & Daemon:**
+     - HTTP Port (`8080`), Default Execution Timeout (`30s`), Log Retention Days (`7d`).
+     - "Run on Windows Startup" switch (updates `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
+     - "Allow Shell Execution (`exec()`)" security switch.
+     - Window Open Mode: Dedicated Edge App Window vs Default Browser Tab vs Silent in Tray.
+   - **Tab 2: Git Credentials & Sync:**
+     - Default Git Author Name & Email.
+     - Personal Access Token / SSH Key for private repositories.
+     - Auto-pull interval or manual sync only.
+   - **Tab 3: Environment Variables (`.env` Manager):**
+     - Interactive Key-Value table for global secrets and API tokens.
+     - Show/Hide mask toggle for secret values.
+     - Two-way sync with root `.env` file.
+   - **Tab 4: UI & Appearance (UI-UX-Pro-Max Theme Configuration):**
+     - Master design system: `design-system/actacron/MASTER.md`.
+     - Theme Accent Color: Emerald Run Green (`#22C55E`, default), Electric Blue (`#38BDF8`), Violet (`#A855F7`).
+     - UI Density Scale: Compact (`8-32px`), Balanced (`16-64px`), Spacious (`24-96px`).
+     - Code Editor Font Size: `12px`, `14px`, `16px`.
+     - Instant live preview via CSS custom property overrides (`--color-accent`, `--space-*`, `--editor-font-size`).
 
 ### 9.4 Keyboard Shortcuts
 * `Ctrl + S`: Save script, validate syntax, reload schedule.
