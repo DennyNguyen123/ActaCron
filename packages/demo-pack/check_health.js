@@ -1,7 +1,7 @@
 /**
  * @name check_health
  * @description Periodic system uptime and health check
- * @cron */30 * * * *
+ * @cron 0,30 * * * *
  * @mcp false
  */
 function main() {

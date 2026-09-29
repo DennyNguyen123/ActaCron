@@ -44,3 +44,23 @@ func TestSyntaxError(t *testing.T) {
 		t.Fatalf("expected syntax error, got nil")
 	}
 }
+
+func TestCheckHealth(t *testing.T) {
+	code := `/**
+ * @name check_health
+ * @description Periodic system uptime and health check
+ * @cron 0/30 * * * *
+ * @mcp false
+ */
+function main() {
+    return { status: "healthy" };
+}`
+	meta, err := parser.Parse(code, "check_health.js")
+	if err != nil {
+		t.Fatalf("check_health parse error: %v", err)
+	}
+	if meta.CronExpr != "0/30 * * * *" {
+		t.Fatalf("expected 0/30 * * * *, got %s", meta.CronExpr)
+	}
+}
+

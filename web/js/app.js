@@ -365,7 +365,7 @@
   async function saveCurrentScript() {
     if (!activeScript) return;
     const content = document.getElementById("scriptEditor").value;
-    const filename = (activeScript.name.endsWith(".js") ? activeScript.name : activeScript.name + ".js");
+    const filename = activeScript.file_path || (activeScript.name.endsWith(".js") ? activeScript.name : activeScript.name + ".js");
 
     try {
       const res = await fetch("/api/functions/save", {

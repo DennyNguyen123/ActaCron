@@ -119,7 +119,12 @@ func (m *Manager) Reload() error {
 					meta.IsEnabled = enabled
 				}
 
-				fullKey := pkgName + "/" + meta.Name
+				baseFileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+				if meta.Name == "" {
+					meta.Name = baseFileName
+				}
+
+				fullKey := pkgName + "/" + baseFileName
 				newFunctions[fullKey] = meta
 				newFileCode[fullKey] = code
 				pkgInfo.Functions = append(pkgInfo.Functions, meta.Name)
@@ -171,9 +176,9 @@ func (m *Manager) GetFunction(key string) *domain.FunctionMeta {
 		return f
 	}
 
-	// Try resolving without package prefix
+	// Try resolving with package/funcName or without package prefix
 	for k, f := range m.functions {
-		if strings.HasSuffix(k, "/"+key) || f.Name == key {
+		if k == key || f.Package+"/"+f.Name == key || strings.HasSuffix(k, "/"+key) || f.Name == key {
 			return f
 		}
 	}
@@ -189,7 +194,8 @@ func (m *Manager) GetFunctionCode(key string) (string, error) {
 	}
 
 	for k, code := range m.fileCode {
-		if strings.HasSuffix(k, "/"+key) {
+		f := m.functions[k]
+		if k == key || (f != nil && f.Package+"/"+f.Name == key) || strings.HasSuffix(k, "/"+key) || (f != nil && f.Name == key) {
 			return code, nil
 		}
 	}

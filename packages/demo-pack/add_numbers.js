@@ -1,4 +1,5 @@
 /**
+ * @cron * * * * *
  * @name add_numbers
  * @description Adds two numbers together
  * @mcp true
