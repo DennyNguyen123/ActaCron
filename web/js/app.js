@@ -253,8 +253,8 @@
     // Update inspector
     document.getElementById("inspCronExpr").value = fn.cron_expr || "";
     updateInspectorCronHuman();
-    document.getElementById("inspMcpStatus").textContent = fn.is_mcp ? "Enabled" : "Disabled";
-    document.getElementById("inspMcpStatus").className = fn.is_mcp ? "badge-status-success" : "badge-status-error";
+    const mcpToggle = document.getElementById("inspMcpToggle");
+    if (mcpToggle) mcpToggle.checked = !!fn.is_mcp;
 
     // Highlight in tree
     document.querySelectorAll(".tree-file-item").forEach(el => el.classList.remove("active"));
@@ -268,6 +268,68 @@
       humanEl.textContent = "(" + window.I18n.cronToString(expr) + ")";
     } else {
       humanEl.textContent = "";
+    }
+  }
+
+  function onInspectorCronChange() {
+    const newCron = document.getElementById("inspCronExpr").value.trim();
+    updateInspectorCronHuman();
+
+    const editor = document.getElementById("scriptEditor");
+    let code = editor.value;
+
+    const cronRegex = /([ \t]*\*[ \t]*@cron)[ \t]+([^\r\n]*)/;
+    if (cronRegex.test(code)) {
+      if (newCron) {
+        code = code.replace(cronRegex, `$1 ${newCron}`);
+      } else {
+        code = code.replace(/([ \t]*\*[ \t]*@cron[^\r\n]*\r?\n?)/, "");
+      }
+    } else if (newCron) {
+      if (code.includes("/**")) {
+        code = code.replace(/(\/\*\*[\r\n]+)/, `$1 * @cron ${newCron}\n`);
+      } else {
+        code = `/**\n * @cron ${newCron}\n */\n` + code;
+      }
+    }
+
+    editor.value = code;
+    if (activeScript) activeScript.cron_expr = newCron;
+  }
+
+  function onInspectorMcpToggle() {
+    const isMcp = document.getElementById("inspMcpToggle").checked;
+    const editor = document.getElementById("scriptEditor");
+    let code = editor.value;
+
+    const mcpRegex = /([ \t]*\*[ \t]*@mcp)[ \t]+([^\r\n]*)/;
+    if (mcpRegex.test(code)) {
+      code = code.replace(mcpRegex, `$1 ${isMcp}`);
+    } else {
+      if (code.includes("/**")) {
+        code = code.replace(/(\/\*\*[\r\n]+)/, `$1 * @mcp ${isMcp}\n`);
+      } else {
+        code = `/**\n * @mcp ${isMcp}\n */\n` + code;
+      }
+    }
+
+    editor.value = code;
+    if (activeScript) activeScript.is_mcp = isMcp;
+  }
+
+  function syncInspectorFromCode() {
+    const code = document.getElementById("scriptEditor").value;
+    const cronMatch = code.match(/@cron[ \t]+([^\r\n*]+)/);
+    const cronInput = document.getElementById("inspCronExpr");
+    if (cronInput) {
+      cronInput.value = cronMatch ? cronMatch[1].trim() : "";
+      updateInspectorCronHuman();
+    }
+
+    const mcpMatch = code.match(/@mcp[ \t]+(true|false)/);
+    const mcpToggle = document.getElementById("inspMcpToggle");
+    if (mcpToggle && mcpMatch) {
+      mcpToggle.checked = mcpMatch[1] === "true";
     }
   }
 
@@ -290,6 +352,10 @@
         editor.selectionStart = editor.selectionEnd = start + 2;
       }
     });
+
+    editor.addEventListener("input", syncInspectorFromCode);
+    document.getElementById("inspCronExpr").addEventListener("input", onInspectorCronChange);
+    document.getElementById("inspMcpToggle").addEventListener("change", onInspectorMcpToggle);
 
     document.getElementById("btnSaveScript").addEventListener("click", saveCurrentScript);
     document.getElementById("btnRunScript").addEventListener("click", runCurrentScript);

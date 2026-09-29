@@ -180,14 +180,14 @@
               <span class="inspector-label">Function Metadata</span>
               <div class="inspector-field">
                 <label style="font-size:11px; color:var(--color-muted-foreground);">Cron Schedule</label>
-                <input type="text" id="inspCronExpr" placeholder="* * * * * (optional)" readonly>
-                <span id="inspCronHuman" style="font-size:11px; color:var(--color-accent);"></span>
+                <input type="text" id="inspCronExpr" placeholder="* * * * * (e.g. */5 * * * *)" style="font-family:var(--font-heading); font-size:12px;">
+                <span id="inspCronHuman" style="font-size:11px; color:var(--color-accent); margin-top:2px;"></span>
               </div>
-              <div class="inspector-field" style="margin-top: 6px;">
-                <label style="font-size:11px; color:var(--color-muted-foreground);">MCP Export</label>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span id="inspMcpStatus" class="badge-status-success">Enabled</span>
-                </div>
+              <div class="inspector-field" style="margin-top: 10px;">
+                <label class="switch-label">
+                  <span style="font-size:12px; color:var(--color-foreground);">Export as MCP Tool</span>
+                  <input type="checkbox" class="switch-input" id="inspMcpToggle">
+                </label>
               </div>
             </div>
 
