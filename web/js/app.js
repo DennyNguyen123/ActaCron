@@ -1233,7 +1233,6 @@ function main(params) {
       alert("Network error: " + err.message);
     }
   }
-})();
   function initResizers() {
     const leftResizer = document.getElementById("resizerLeft");
     const rightResizer = document.getElementById("resizerRight");
@@ -1294,3 +1293,4 @@ function main(params) {
       });
     }
   }
+})();
