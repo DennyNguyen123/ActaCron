@@ -10,6 +10,8 @@ data/*.db-journal
 
 # Superpowers temporary workspace
 .superpowers/
+.worktrees/
+worktrees/
 
 # OS and Editors
 .DS_Store
