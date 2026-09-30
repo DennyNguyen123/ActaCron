@@ -544,11 +544,17 @@ func (h *APIHandler) handleWorkspaceConfig(w http.ResponseWriter, r *http.Reques
 		wsCfg := h.mgr.GetWorkspaceConfig(pkgName)
 		wsEnv := h.mgr.GetWorkspaceEnv(pkgName)
 
+		hasEnvFile := h.mgr.HasWorkspaceEnvFile(pkgName)
+		exampleEnv := h.mgr.GetWorkspaceExampleEnv(pkgName)
+
 		res := map[string]interface{}{
 			"package":         pkgName,
 			"timeout_seconds": wsCfg.TimeoutSeconds,
 			"description":     wsCfg.Description,
 			"env":             wsEnv,
+			"has_env_file":    hasEnvFile,
+			"is_from_example": !hasEnvFile && len(wsEnv) > 0,
+			"example_env":     exampleEnv,
 		}
 		writeJSON(w, http.StatusOK, res)
 

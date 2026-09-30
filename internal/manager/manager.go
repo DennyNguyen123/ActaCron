@@ -142,6 +142,11 @@ func (m *Manager) Reload() error {
 		wsEnvPath := filepath.Join(pkgPath, ".env")
 		if envMap, err := settings.ReadEnv(wsEnvPath); err == nil && len(envMap) > 0 {
 			newWorkspaceEnvs[pkgName] = envMap
+		} else {
+			wsExampleEnvPath := filepath.Join(pkgPath, ".env.example")
+			if envMapExample, errExample := settings.ReadEnv(wsExampleEnvPath); errExample == nil && len(envMapExample) > 0 {
+				newWorkspaceEnvs[pkgName] = envMapExample
+			}
 		}
 
 		pkgInfo := &domain.PackageInfo{
@@ -619,6 +624,20 @@ func (m *Manager) GetWorkspaceEnv(pkgName string) map[string]string {
 			res[k] = v
 		}
 		return res
+	}
+	return make(map[string]string)
+}
+
+func (m *Manager) HasWorkspaceEnvFile(pkgName string) bool {
+	envPath := filepath.Join(m.packagesDir, pkgName, ".env")
+	info, err := os.Stat(envPath)
+	return err == nil && !info.IsDir() && info.Size() > 0
+}
+
+func (m *Manager) GetWorkspaceExampleEnv(pkgName string) map[string]string {
+	envPath := filepath.Join(m.packagesDir, pkgName, ".env.example")
+	if envMap, err := settings.ReadEnv(envPath); err == nil {
+		return envMap
 	}
 	return make(map[string]string)
 }

@@ -196,3 +196,52 @@ func TestWorkspaceEnvOverride(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEnvExampleFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_env_example.db")
+	db, _ := storage.New(dbFile)
+	defer db.Close()
+
+	runner := engine.New(db, 5, false)
+	mgr := manager.New(tmpDir, runner, db)
+
+	pkgPath := filepath.Join(tmpDir, "myPkg")
+	os.MkdirAll(pkgPath, 0755)
+
+	// Create only .env.example
+	os.WriteFile(filepath.Join(pkgPath, ".env.example"), []byte("API_URL=example_url\n"), 0644)
+
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+
+	if mgr.HasWorkspaceEnvFile("myPkg") {
+		t.Errorf("expected HasWorkspaceEnvFile to be false when only .env.example exists")
+	}
+
+	envMap := mgr.GetWorkspaceEnv("myPkg")
+	if envMap["API_URL"] != "example_url" {
+		t.Errorf("expected API_URL=example_url from .env.example fallback, got %q", envMap["API_URL"])
+	}
+
+	exampleEnv := mgr.GetWorkspaceExampleEnv("myPkg")
+	if exampleEnv["API_URL"] != "example_url" {
+		t.Errorf("expected API_URL=example_url in exampleEnv, got %q", exampleEnv["API_URL"])
+	}
+
+	// Now add a real .env, it should override
+	os.WriteFile(filepath.Join(pkgPath, ".env"), []byte("API_URL=real_url\n"), 0644)
+
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+
+	if !mgr.HasWorkspaceEnvFile("myPkg") {
+		t.Errorf("expected HasWorkspaceEnvFile to be true when .env exists")
+	}
+
+	envMap2 := mgr.GetWorkspaceEnv("myPkg")
+	if envMap2["API_URL"] != "real_url" {
+		t.Errorf("expected API_URL=real_url from .env override, got %q", envMap2["API_URL"])
+	}
+}
