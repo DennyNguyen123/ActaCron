@@ -43,3 +43,17 @@ func TestWorkspaceUIElements(t *testing.T) {
 	}
 }
 
+func TestAppJSEventWiring(t *testing.T) {
+	data, err := web.Assets.ReadFile("js/app.js")
+	if err != nil {
+		t.Fatalf("failed reading js/app.js: %v", err)
+	}
+	appStr := string(data)
+	for _, token := range []string{"btnActiveWsConfig", "inspectorWsSection", "inspWsName", "btnInspWsConfig"} {
+		if !strings.Contains(appStr, token) {
+			t.Fatalf("expected js/app.js to reference %s", token)
+		}
+	}
+}
+
+

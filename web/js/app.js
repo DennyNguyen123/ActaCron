@@ -229,9 +229,10 @@
         ? `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><span>🔗</span> <strong>_shared</strong> <span class="badge-shared-library">LIB</span></div>`
         : `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span>${pkgName}</span></div>`;
 
+      const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
       const actionButtons = `
         <div style="display:flex; align-items:center; gap:4px;">
-          ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" title="Workspace Config" data-pkg="${pkgName}">⚙️</button>` : ''}
+          ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
           <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
         </div>
       `;
@@ -336,6 +337,20 @@
     const mcpToggle = document.getElementById("inspMcpToggle");
     if (mcpToggle) mcpToggle.checked = !!fn.is_mcp;
 
+    // Update active workspace buttons
+    const btnActiveWs = document.getElementById("btnActiveWsConfig");
+    const inspWsSection = document.getElementById("inspectorWsSection");
+    const inspWsName = document.getElementById("inspWsName");
+
+    if (fn.package && fn.package !== "_shared") {
+      if (btnActiveWs) btnActiveWs.style.display = "inline-flex";
+      if (inspWsSection) inspWsSection.style.display = "block";
+      if (inspWsName) inspWsName.textContent = fn.package;
+    } else {
+      if (btnActiveWs) btnActiveWs.style.display = "none";
+      if (inspWsSection) inspWsSection.style.display = "none";
+    }
+
     // Highlight in tree
     document.querySelectorAll(".tree-file-item").forEach(el => el.classList.remove("active"));
     renderTree(allFunctions);
@@ -349,6 +364,10 @@
     if (editorEl) editorEl.value = "";
     const btnDel = document.getElementById("btnDeleteScript");
     if (btnDel) btnDel.style.display = "none";
+    const btnActiveWs = document.getElementById("btnActiveWsConfig");
+    if (btnActiveWs) btnActiveWs.style.display = "none";
+    const inspWsSection = document.getElementById("inspectorWsSection");
+    if (inspWsSection) inspWsSection.style.display = "none";
     const inspCron = document.getElementById("inspCronExpr");
     if (inspCron) inspCron.value = "";
     updateInspectorCronHuman();
@@ -1079,6 +1098,24 @@ function main(params) {
     document.getElementById("btnCancelWsConfig").addEventListener("click", closeWsModal);
     document.getElementById("btnSaveWsConfig").addEventListener("click", saveWorkspaceConfig);
     document.getElementById("btnAddWsEnvRow").addEventListener("click", () => addWsEnvRow("", ""));
+
+    const btnActiveWs = document.getElementById("btnActiveWsConfig");
+    if (btnActiveWs) {
+      btnActiveWs.addEventListener("click", () => {
+        if (activeScript && activeScript.package && activeScript.package !== "_shared") {
+          openWorkspaceConfigModal(activeScript.package);
+        }
+      });
+    }
+
+    const btnInspWs = document.getElementById("btnInspWsConfig");
+    if (btnInspWs) {
+      btnInspWs.addEventListener("click", () => {
+        if (activeScript && activeScript.package && activeScript.package !== "_shared") {
+          openWorkspaceConfigModal(activeScript.package);
+        }
+      });
+    }
   }
 
   // --- Workspace Config Helpers ---
