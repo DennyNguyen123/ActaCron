@@ -1248,6 +1248,10 @@ function main(params) {
     if (leftResizer && treePane) {
       leftResizer.addEventListener("mousedown", (e) => {
         e.preventDefault();
+        leftResizer.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
         const startX = e.clientX;
         const startWidth = treePane.offsetWidth;
         
@@ -1260,6 +1264,9 @@ function main(params) {
         };
         
         const onMouseUp = () => {
+          leftResizer.classList.remove("dragging");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
           document.removeEventListener("mousemove", onMouseMove);
           document.removeEventListener("mouseup", onMouseUp);
         };
@@ -1272,6 +1279,10 @@ function main(params) {
     if (rightResizer && inspectorPane) {
       rightResizer.addEventListener("mousedown", (e) => {
         e.preventDefault();
+        rightResizer.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
         const startX = e.clientX;
         const startWidth = inspectorPane.offsetWidth;
         
@@ -1284,6 +1295,9 @@ function main(params) {
         };
         
         const onMouseUp = () => {
+          rightResizer.classList.remove("dragging");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
           document.removeEventListener("mousemove", onMouseMove);
           document.removeEventListener("mouseup", onMouseUp);
         };
