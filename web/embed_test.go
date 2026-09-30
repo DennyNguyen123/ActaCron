@@ -109,3 +109,22 @@ func TestResizableLayoutAndExampleEnvElements(t *testing.T) {
 		}
 	}
 }
+
+func TestAppJSResizerAndExampleEnvWiring(t *testing.T) {
+	data, err := web.Assets.ReadFile("js/app.js")
+	if err != nil {
+		t.Fatalf("failed reading js/app.js: %v", err)
+	}
+	appStr := string(data)
+	required := []string{
+		"initResizers",
+		"btnLoadWsEnvExample",
+		"wsEnvExampleHint",
+		"actacron_tree_width",
+	}
+	for _, req := range required {
+		if !strings.Contains(appStr, req) {
+			t.Fatalf("expected js/app.js to reference %s", req)
+		}
+	}
+}

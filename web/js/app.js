@@ -11,6 +11,7 @@
     initLogsEvents();
     initSettingsEvents();
     initModals();
+    initResizers();
 
     // Start background health polling
     pollHealth();
@@ -226,12 +227,12 @@
       headerDiv.className = "tree-package-header" + (isShared ? " shared-package" : "");
 
       const headerTitle = isShared 
-        ? `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><span>🔗</span> <strong>_shared</strong> <span class="badge-shared-library">LIB</span></div>`
-        : `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span>${pkgName}</span></div>`;
+        ? `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><span>🔗</span> <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">_shared</strong> <span class="badge-shared-library" style="flex-shrink:0;">LIB</span></div>`
+        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span></div>`;
 
       const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
       const actionButtons = `
-        <div style="display:flex; align-items:center; gap:4px;">
+        <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
           ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" data-i18n-title="ws_config_tooltip" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
           <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
         </div>
@@ -286,8 +287,8 @@
         if (fn.cron_expr) badges.push('<span class="badge-cron-mini">CRON</span>');
 
         itemLi.innerHTML = `
-          <span>${fn.name}</span>
-          <div style="display:flex; gap:4px; align-items:center;">
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; margin-right:6px;" title="${fn.name}">${fn.name}</span>
+          <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
             ${badges.join("")}
             ${!isShared ? `<button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -1140,6 +1141,25 @@ function main(params) {
         timeoutInput.value = data.timeout_seconds || 30;
         descInput.value = data.description || "";
         renderWsEnvRows(data.env || {});
+
+        if (data.is_from_example) {
+          document.getElementById("wsEnvExampleHint").style.display = "block";
+        } else {
+          document.getElementById("wsEnvExampleHint").style.display = "none";
+        }
+
+        const btnLoadEx = document.getElementById("btnLoadWsEnvExample");
+        if (btnLoadEx) {
+          if (data.example_env && Object.keys(data.example_env).length > 0) {
+            btnLoadEx.style.display = "inline-flex";
+            btnLoadEx.onclick = () => {
+              renderWsEnvRows(data.example_env);
+              document.getElementById("wsEnvExampleHint").style.display = "block";
+            };
+          } else {
+            btnLoadEx.style.display = "none";
+          }
+        }
       } else {
         renderWsEnvRows({});
       }
@@ -1214,3 +1234,63 @@ function main(params) {
     }
   }
 })();
+  function initResizers() {
+    const leftResizer = document.getElementById("resizerLeft");
+    const rightResizer = document.getElementById("resizerRight");
+    const treePane = document.getElementById("treePane");
+    const inspectorPane = document.getElementById("inspectorPane");
+    
+    const savedTreeWidth = localStorage.getItem("actacron_tree_width");
+    if (savedTreeWidth && treePane) treePane.style.width = savedTreeWidth + "px";
+    
+    const savedInspWidth = localStorage.getItem("actacron_inspector_width");
+    if (savedInspWidth && inspectorPane) inspectorPane.style.width = savedInspWidth + "px";
+
+    if (leftResizer && treePane) {
+      leftResizer.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = treePane.offsetWidth;
+        
+        const onMouseMove = (e) => {
+          let newWidth = startWidth + (e.clientX - startX);
+          if (newWidth < 200) newWidth = 200;
+          if (newWidth > 600) newWidth = 600;
+          treePane.style.width = newWidth + "px";
+          localStorage.setItem("actacron_tree_width", newWidth);
+        };
+        
+        const onMouseUp = () => {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+        };
+        
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+    }
+
+    if (rightResizer && inspectorPane) {
+      rightResizer.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = inspectorPane.offsetWidth;
+        
+        const onMouseMove = (e) => {
+          let newWidth = startWidth - (e.clientX - startX);
+          if (newWidth < 200) newWidth = 200;
+          if (newWidth > 600) newWidth = 600;
+          inspectorPane.style.width = newWidth + "px";
+          localStorage.setItem("actacron_inspector_width", newWidth);
+        };
+        
+        const onMouseUp = () => {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+        };
+        
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+    }
+  }
