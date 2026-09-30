@@ -666,6 +666,7 @@ textarea.code-editor {
 input[type="text"],
 input[type="number"],
 input[type="password"],
+input[type="datetime-local"],
 select,
 textarea.form-textarea {
   background-color: var(--color-background);
@@ -986,6 +987,90 @@ table.data-table tr:hover {
   border-radius: 4px;
   font-family: var(--font-heading);
   font-size: 11px;
+}
+
+/* Advanced Scheduling Accordion */
+.adv-schedule-accordion {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--color-surface);
+}
+
+.adv-schedule-accordion summary {
+  user-select: none;
+  outline: none;
+}
+
+/* Cron Lifecycle Status Badges */
+.badge-cron-active {
+  color: var(--color-accent);
+  background-color: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-cron-paused {
+  color: var(--color-muted-foreground);
+  background-color: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-cron-pending {
+  color: #F59E0B;
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-cron-expired {
+  color: var(--color-destructive);
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-cron-running {
+  color: #818CF8;
+  background-color: rgba(129, 140, 248, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Code Snippet Box */

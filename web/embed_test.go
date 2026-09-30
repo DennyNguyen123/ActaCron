@@ -128,3 +128,87 @@ func TestAppJSResizerAndExampleEnvWiring(t *testing.T) {
 		}
 	}
 }
+
+func TestComprehensiveCronUIElementsAndI18n(t *testing.T) {
+	htmlData, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed reading index.html: %v", err)
+	}
+	htmlStr := string(htmlData)
+
+	elements := []string{
+		`id="inspCronToggle"`,
+		`id="inspTimezone"`,
+		`id="inspAdvScheduleContent"`,
+		`id="inspCronStart"`,
+		`id="inspCronEnd"`,
+		`id="inspMaxRuns"`,
+		`id="inspRetryCount"`,
+		`id="inspNoOverlap"`,
+		`id="overviewCronTable"`,
+	}
+	for _, el := range elements {
+		if !strings.Contains(htmlStr, el) {
+			t.Fatalf("expected index.html to contain %s", el)
+		}
+	}
+
+	tableHeaders := []string{
+		"Function",
+		"Schedule & Timezone",
+		"Status",
+		"Next Run",
+		"Actions",
+	}
+	for _, th := range tableHeaders {
+		if !strings.Contains(htmlStr, th) {
+			t.Fatalf("expected index.html overview table header to contain %s", th)
+		}
+	}
+
+	cssData, err := web.Assets.ReadFile("css/style.css")
+	if err != nil {
+		t.Fatalf("failed reading css/style.css: %v", err)
+	}
+	cssStr := string(cssData)
+	cssClasses := []string{
+		".adv-schedule-accordion",
+		".badge-cron-active",
+		".badge-cron-paused",
+		".badge-cron-pending",
+		".badge-cron-expired",
+		".badge-cron-running",
+	}
+	for _, cls := range cssClasses {
+		if !strings.Contains(cssStr, cls) {
+			t.Fatalf("expected css/style.css to contain %s", cls)
+		}
+	}
+
+	i18nData, err := web.Assets.ReadFile("js/i18n.js")
+	if err != nil {
+		t.Fatalf("failed reading js/i18n.js: %v", err)
+	}
+	i18nStr := string(i18nData)
+	keys := []string{
+		"cron_toggle_label",
+		"timezone_label",
+		"adv_schedule_label",
+		"cron_start_label",
+		"cron_end_label",
+		"max_runs_label",
+		"retry_label",
+		"no_overlap_label",
+		"status_active",
+		"status_paused",
+		"status_pending",
+		"status_expired",
+		"status_running",
+	}
+	for _, k := range keys {
+		if !strings.Contains(i18nStr, `"`+k+`"`) {
+			t.Fatalf("expected js/i18n.js to contain translation key %s", k)
+		}
+	}
+}
+
