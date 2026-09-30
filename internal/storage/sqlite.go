@@ -329,6 +329,20 @@ func (s *DB) SetFunctionState(pkg, funcName string, enabled bool, lastStatus str
 	return err
 }
 
+func (s *DB) SetFunctionEnabled(pkg, funcName string, enabled bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO function_state (package_name, function_name, is_enabled)
+	VALUES (?, ?, ?)
+	ON CONFLICT(package_name, function_name) DO UPDATE SET
+		is_enabled = excluded.is_enabled`
+
+	_, err := s.db.Exec(query, pkg, funcName, enabled)
+	return err
+}
+
 func (s *DB) GetFunctionState(pkg, funcName string) (bool, string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

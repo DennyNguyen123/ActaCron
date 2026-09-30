@@ -37,7 +37,7 @@ type Scheduler struct {
 	cron        *cron.Cron
 	parser      cron.Parser
 	entryKeys   map[cron.EntryID]string // entryID -> "pkg/func"
-	runningJobs map[string]bool         // "pkg/func" -> true
+	runningJobs map[string]int          // "pkg/func" -> active execution count
 	jobsMu      sync.RWMutex
 	mu          sync.RWMutex
 	running     bool
@@ -53,7 +53,7 @@ func New(mgr *manager.Manager, db *storage.DB) *Scheduler {
 		cron:        c,
 		parser:      parser,
 		entryKeys:   make(map[cron.EntryID]string),
-		runningJobs: make(map[string]bool),
+		runningJobs: make(map[string]int),
 	}
 	s.Reschedule()
 	return s
@@ -96,9 +96,6 @@ func (s *Scheduler) computeStatus(fn *domain.FunctionMeta, isRunning bool) strin
 	if isRunning {
 		return "running"
 	}
-	if !fn.IsEnabled {
-		return "paused"
-	}
 	loc := getTimeLocation(fn.Timezone)
 	now := time.Now().In(loc)
 
@@ -109,6 +106,9 @@ func (s *Scheduler) computeStatus(fn *domain.FunctionMeta, isRunning bool) strin
 	}
 	if fn.MaxRuns > 0 && fn.RunCount >= fn.MaxRuns {
 		return "completed"
+	}
+	if !fn.IsEnabled {
+		return "paused"
 	}
 	if fn.CronStart != "" {
 		if start, err := parseBoundaryTime(fn.CronStart, loc); err == nil && now.Before(start) {
@@ -212,8 +212,9 @@ func (s *Scheduler) executeScheduledJob(targetKey, pkgName, funcName string) {
 			if now.After(end) {
 				fn.IsEnabled = false
 				if s.db != nil {
-					_ = s.db.SetFunctionState(fn.Package, fn.Name, false, "expired")
+					_ = s.db.SetFunctionEnabled(fn.Package, fn.Name, false)
 				}
+				go s.Reschedule()
 				return
 			}
 		} else {
@@ -225,14 +226,15 @@ func (s *Scheduler) executeScheduledJob(targetKey, pkgName, funcName string) {
 	if fn.MaxRuns > 0 && fn.RunCount >= fn.MaxRuns {
 		fn.IsEnabled = false
 		if s.db != nil {
-			_ = s.db.SetFunctionState(fn.Package, fn.Name, false, "completed")
+			_ = s.db.SetFunctionEnabled(fn.Package, fn.Name, false)
 		}
+		go s.Reschedule()
 		return
 	}
 
-	// 5. Overlap Guard: if fn.NoOverlap && runningJobs[targetKey]: insert log with status "skipped_overlap", skip.
+	// 5. Overlap Guard: if fn.NoOverlap && runningJobs[targetKey] > 0: insert log with status "skipped_overlap", skip.
 	s.jobsMu.Lock()
-	if fn.NoOverlap && s.runningJobs[targetKey] {
+	if fn.NoOverlap && s.runningJobs[targetKey] > 0 {
 		s.jobsMu.Unlock()
 		log.Printf("[Scheduler] Overlap detected for %s. Previous execution still active. Skipping run.", targetKey)
 		if s.db != nil {
@@ -248,12 +250,15 @@ func (s *Scheduler) executeScheduledJob(targetKey, pkgName, funcName string) {
 		}
 		return
 	}
-	s.runningJobs[targetKey] = true
+	s.runningJobs[targetKey]++
 	s.jobsMu.Unlock()
 
 	defer func() {
 		s.jobsMu.Lock()
-		delete(s.runningJobs, targetKey)
+		s.runningJobs[targetKey]--
+		if s.runningJobs[targetKey] <= 0 {
+			delete(s.runningJobs, targetKey)
+		}
 		s.jobsMu.Unlock()
 	}()
 
@@ -293,8 +298,9 @@ func (s *Scheduler) executeScheduledJob(targetKey, pkgName, funcName string) {
 		if fn.MaxRuns > 0 && fn.RunCount >= fn.MaxRuns {
 			fn.IsEnabled = false
 			if s.db != nil {
-				_ = s.db.SetFunctionState(fn.Package, fn.Name, false, "completed")
+				_ = s.db.SetFunctionEnabled(fn.Package, fn.Name, false)
 			}
+			go s.Reschedule()
 		}
 	}
 }
@@ -306,7 +312,7 @@ func (s *Scheduler) GetJobs() []CronJobInfo {
 	s.jobsMu.RLock()
 	runningSnapshot := make(map[string]bool, len(s.runningJobs))
 	for k, v := range s.runningJobs {
-		runningSnapshot[k] = v
+		runningSnapshot[k] = v > 0
 	}
 	s.jobsMu.RUnlock()
 
@@ -345,8 +351,24 @@ func (s *Scheduler) GetJobs() []CronJobInfo {
 
 		if e, exists := entryMap[fullKey]; exists {
 			job.EntryID = int(e.ID)
-			job.NextRun = e.Next
 			job.PrevRun = e.Prev
+			if status == "paused" || status == "expired" || status == "completed" {
+				job.NextRun = time.Time{}
+			} else if status == "pending" && fn.CronStart != "" {
+				loc := getTimeLocation(fn.Timezone)
+				now := time.Now().In(loc)
+				if start, err := parseBoundaryTime(fn.CronStart, loc); err == nil && now.Before(start) {
+					if sched, err := s.parser.Parse(fn.CronExpr); err == nil {
+						job.NextRun = sched.Next(start)
+					} else {
+						job.NextRun = e.Next
+					}
+				} else {
+					job.NextRun = e.Next
+				}
+			} else {
+				job.NextRun = e.Next
+			}
 		}
 
 		jobs = append(jobs, job)
@@ -356,10 +378,15 @@ func (s *Scheduler) GetJobs() []CronJobInfo {
 
 func (s *Scheduler) RunJobNow(target string) error {
 	fn := s.mgr.GetFunction(target)
+	targetKey := target
+	if fn != nil {
+		targetKey = fn.Package + "/" + fn.Name
+	}
+
 	s.jobsMu.Lock()
-	if fn != nil && fn.NoOverlap && s.runningJobs[target] {
+	if fn != nil && fn.NoOverlap && s.runningJobs[targetKey] > 0 {
 		s.jobsMu.Unlock()
-		log.Printf("[Scheduler] Overlap detected for manual run %s. Previous execution still active. Skipping run.", target)
+		log.Printf("[Scheduler] Overlap detected for manual run %s. Previous execution still active. Skipping run.", targetKey)
 		if s.db != nil {
 			_ = s.db.InsertLog(&domain.ExecutionLog{
 				ExecutionID:  fmt.Sprintf("cron-manual-skip-%d", time.Now().UnixNano()),
@@ -373,18 +400,21 @@ func (s *Scheduler) RunJobNow(target string) error {
 		}
 		return fmt.Errorf("job '%s' is already running", target)
 	}
-	s.runningJobs[target] = true
+	s.runningJobs[targetKey]++
 	s.jobsMu.Unlock()
 
 	defer func() {
 		s.jobsMu.Lock()
-		delete(s.runningJobs, target)
+		s.runningJobs[targetKey]--
+		if s.runningJobs[targetKey] <= 0 {
+			delete(s.runningJobs, targetKey)
+		}
 		s.jobsMu.Unlock()
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, err := s.mgr.CallWithTrigger(ctx, target, nil, "cron_manual")
+	_, err := s.mgr.CallWithTrigger(ctx, targetKey, nil, "cron_manual")
 	return err
 }
 
@@ -411,7 +441,7 @@ func (s *Scheduler) ToggleJob(target string, enabled bool) error {
 
 	fn.IsEnabled = enabled
 	if s.db != nil {
-		s.db.SetFunctionState(fn.Package, fn.Name, enabled, "")
+		_ = s.db.SetFunctionEnabled(fn.Package, fn.Name, enabled)
 	}
 
 	s.Reschedule()
@@ -427,5 +457,5 @@ func (s *Scheduler) IsRunning() bool {
 func (s *Scheduler) IsJobRunning(target string) bool {
 	s.jobsMu.RLock()
 	defer s.jobsMu.RUnlock()
-	return s.runningJobs[target]
+	return s.runningJobs[target] > 0
 }

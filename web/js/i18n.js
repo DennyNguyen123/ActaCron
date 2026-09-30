@@ -112,6 +112,7 @@
       "status_pending": "Pending",
       "status_expired": "Expired",
       "status_running": "Running",
+      "status_completed": "Completed",
 
       cron_modal_title: "Cron Schedule Details",
       saved_successfully: "Settings saved successfully.",
@@ -232,6 +233,7 @@
       "status_pending": "Chờ bắt đầu",
       "status_expired": "Hết hạn",
       "status_running": "Đang thực thi",
+      "status_completed": "Hoàn thành",
 
       cron_modal_title: "Chi tiết lịch định kỳ Cron",
       saved_successfully: "Cài đặt đã được lưu thành công.",

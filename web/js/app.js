@@ -169,7 +169,7 @@
         const tzText = fn.timezone ? `<span style="font-size:10px; color:var(--color-muted-foreground); margin-left:4px;">[${fn.timezone}]</span>` : '';
 
         let nextRunText = "-";
-        if (job.next_run && !job.next_run.startsWith("0001-01-01")) {
+        if ((status === "active" || status === "pending" || status === "running") && job.next_run && !job.next_run.startsWith("0001-01-01")) {
           const nextDate = new Date(job.next_run);
           const diffMs = nextDate.getTime() - Date.now();
           if (diffMs > 0) {
@@ -367,11 +367,25 @@
         const badges = [];
         if (fn.is_mcp) badges.push('<span class="badge-mcp-mini">MCP</span>');
         if (fn.cron_expr) {
-          if (fn.is_enabled === false) {
-            badges.push('<span class="badge-cron-paused" style="font-size:9px; padding:1px 4px;">PAUSED</span>');
-          } else {
-            badges.push('<span class="badge-cron-mini">CRON</span>');
+          let badgeType = "badge-cron-mini";
+          let badgeText = "CRON";
+
+          const now = new Date();
+          if (fn.cron_end && new Date(fn.cron_end) < now) {
+            badgeType = "badge-cron-expired";
+            badgeText = "EXPIRED";
+          } else if (fn.max_runs > 0 && fn.run_count >= fn.max_runs) {
+            badgeType = "badge-cron-paused";
+            badgeText = "PAUSED";
+          } else if (fn.is_enabled === false) {
+            badgeType = "badge-cron-paused";
+            badgeText = "PAUSED";
+          } else if (fn.cron_start && new Date(fn.cron_start) > now) {
+            badgeType = "badge-cron-pending";
+            badgeText = "PENDING";
           }
+
+          badges.push(`<span class="${badgeType}" style="font-size:9px; padding:1px 4px;">${badgeText}</span>`);
         }
 
         itemLi.innerHTML = `
@@ -560,12 +574,12 @@
     const editor = document.getElementById("scriptEditor");
     if (!editor) return;
     let code = editor.value;
-    const tagRegex = new RegExp(`([ \\t]*\\*[ \\t]*@${tag})[ \\t]+([^\\r\\n]*)`);
+    const tagRegex = new RegExp(`([ \\t]*\\*[ \\t]*@${tag}\\b)[ \\t]+([^\\r\\n]*)`);
     if (tagRegex.test(code)) {
       if (value !== null && value !== "" && value !== undefined) {
         code = code.replace(tagRegex, `$1 ${value}`);
       } else {
-        code = code.replace(new RegExp(`([ \\t]*\\*[ \\t]*@${tag}[^\\r\\n]*\\r?\\n?)`), "");
+        code = code.replace(new RegExp(`([ \\t]*\\*[ \\t]*@${tag}\\b[^\\r\\n]*\\r?\\n?)`), "");
       }
     } else if (value !== null && value !== "" && value !== undefined) {
       if (code.includes("/**")) {
