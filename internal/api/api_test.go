@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -133,5 +134,120 @@ func TestWorkspaceConfigAPI(t *testing.T) {
 		t.Errorf("unexpected env result: %+v", getRes.Env)
 	}
 }
+
+func TestCronAPI(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_api_cron.db")
+	db, err := storage.New(dbFile)
+	if err != nil {
+		t.Fatalf("failed db: %v", err)
+	}
+	defer db.Close()
+
+	runner := engine.New(db, 10, false)
+	mgr := manager.New(tmpDir, runner, db)
+
+	// Create test script with comprehensive cron annotations
+	pkgDir := filepath.Join(tmpDir, "cronpkg")
+	os.MkdirAll(pkgDir, 0755)
+	os.WriteFile(filepath.Join(pkgDir, "sample.js"), []byte(`/**
+ * @name sample
+ * @cron 0 12 * * *
+ * @cron_start 2099-01-01 00:00:00
+ * @timezone Asia/Tokyo
+ * @max_runs 10
+ */
+function main() { return "hello"; }`), 0644)
+
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+
+	sched := scheduler.New(mgr, db)
+	gitSvc := gitmgr.New()
+	settingsSvc := settings.New(db, filepath.Join(tmpDir, ".env"))
+
+	router := api.NewRouter(mgr, sched, db, gitSvc, settingsSvc, nil)
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	// 1. GET /api/cron should return enriched job details
+	resp, err := http.Get(ts.URL + "/api/cron")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for GET /api/cron, got status %v, err %v", resp.StatusCode, err)
+	}
+
+	var jobs []scheduler.CronJobInfo
+	if err := json.NewDecoder(resp.Body).Decode(&jobs); err != nil {
+		t.Fatalf("failed decoding GET /api/cron: %v", err)
+	}
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 cron job, got %d", len(jobs))
+	}
+	job := jobs[0]
+	if job.FunctionName != "sample" {
+		t.Errorf("expected sample, got %s", job.FunctionName)
+	}
+	if job.Status != "pending" {
+		t.Errorf("expected pending, got %s", job.Status)
+	}
+	if job.Timezone != "Asia/Tokyo" {
+		t.Errorf("expected Asia/Tokyo, got %s", job.Timezone)
+	}
+	if job.CronStart != "2099-01-01 00:00:00" {
+		t.Errorf("expected cron_start 2099-01-01 00:00:00, got %s", job.CronStart)
+	}
+	if job.MaxRuns != 10 {
+		t.Errorf("expected max_runs 10, got %d", job.MaxRuns)
+	}
+	if job.RunCount != 0 {
+		t.Errorf("expected run_count 0, got %d", job.RunCount)
+	}
+
+	// 2. Increment run count in storage & memory
+	_ = db.IncrementRunCount("cronpkg", "sample")
+	fn := mgr.GetFunction("cronpkg/sample")
+	fn.RunCount = 1
+
+	// 3. POST /api/cron with action "reset_runs"
+	resetPayload := `{"action":"reset_runs","target":"cronpkg/sample"}`
+	resp, err = http.Post(ts.URL+"/api/cron", "application/json", strings.NewReader(resetPayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for reset_runs, got status %v, err %v", resp.StatusCode, err)
+	}
+
+	var resetRes map[string]string
+	json.NewDecoder(resp.Body).Decode(&resetRes)
+	if resetRes["status"] != "reset" {
+		t.Errorf("expected status 'reset', got %s", resetRes["status"])
+	}
+
+	// 4. Verify run_count is 0 via GET /api/cron
+	resp, err = http.Get(ts.URL + "/api/cron")
+	if err != nil {
+		t.Fatalf("GET /api/cron error: %v", err)
+	}
+	jobs = nil
+	json.NewDecoder(resp.Body).Decode(&jobs)
+	if len(jobs) > 0 && jobs[0].RunCount != 0 {
+		t.Errorf("expected RunCount=0 after reset, got %d", jobs[0].RunCount)
+	}
+
+	// 5. POST /api/cron with action "toggle" to pause
+	togglePayload := `{"action":"toggle","target":"cronpkg/sample","enable":false}`
+	resp, err = http.Post(ts.URL+"/api/cron", "application/json", strings.NewReader(togglePayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for toggle, got status %v, err %v", resp.StatusCode, err)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/cron")
+	jobs = nil
+	json.NewDecoder(resp.Body).Decode(&jobs)
+	if len(jobs) > 0 && jobs[0].Status != "paused" {
+		t.Errorf("expected status 'paused' after toggle, got %s", jobs[0].Status)
+	}
+}
+
 
 

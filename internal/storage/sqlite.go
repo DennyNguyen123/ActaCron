@@ -73,6 +73,11 @@ func (s *DB) initSchema() error {
 		is_enabled BOOLEAN DEFAULT 1,
 		last_run_at DATETIME,
 		last_status TEXT,
+		run_count INTEGER DEFAULT 0,
+		cron_start TEXT,
+		cron_end TEXT,
+		timezone TEXT,
+		max_runs INTEGER DEFAULT 0,
 		PRIMARY KEY (package_name, function_name)
 	);
 
@@ -90,8 +95,43 @@ func (s *DB) initSchema() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Safe migration: check for missing columns in existing function_state table
+	cols := make(map[string]bool)
+	rows, err := s.db.Query("PRAGMA table_info(function_state)")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, colType string
+			var notNull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err == nil {
+				cols[name] = true
+			}
+		}
+	}
+
+	newCols := []struct {
+		name string
+		def  string
+	}{
+		{"run_count", "INTEGER DEFAULT 0"},
+		{"cron_start", "TEXT"},
+		{"cron_end", "TEXT"},
+		{"timezone", "TEXT"},
+		{"max_runs", "INTEGER DEFAULT 0"},
+	}
+	for _, col := range newCols {
+		if !cols[col.name] {
+			_, _ = s.db.Exec(fmt.Sprintf("ALTER TABLE function_state ADD COLUMN %s %s", col.name, col.def))
+		}
+	}
+
+	return nil
 }
 
 func (s *DB) InsertLog(log *domain.ExecutionLog) error {
@@ -301,6 +341,47 @@ func (s *DB) GetFunctionState(pkg, funcName string) (bool, string, error) {
 		return true, "", nil // Default enabled
 	}
 	return enabled, lastStatus, err
+}
+
+func (s *DB) IncrementRunCount(pkg, funcName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO function_state (package_name, function_name, run_count, is_enabled)
+	VALUES (?, ?, 1, 1)
+	ON CONFLICT(package_name, function_name) DO UPDATE SET
+		run_count = COALESCE(function_state.run_count, 0) + 1`
+
+	_, err := s.db.Exec(query, pkg, funcName)
+	return err
+}
+
+func (s *DB) ResetRunCount(pkg, funcName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO function_state (package_name, function_name, run_count, is_enabled)
+	VALUES (?, ?, 0, 1)
+	ON CONFLICT(package_name, function_name) DO UPDATE SET
+		run_count = 0`
+
+	_, err := s.db.Exec(query, pkg, funcName)
+	return err
+}
+
+func (s *DB) GetRunCount(pkg, funcName string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `SELECT COALESCE(run_count, 0) FROM function_state WHERE package_name = ? AND function_name = ?`
+	var count int
+	err := s.db.QueryRow(query, pkg, funcName).Scan(&count)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return count, err
 }
 
 func (s *DB) DeleteOldLogs(days int) (int64, error) {

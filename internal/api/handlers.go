@@ -405,6 +405,14 @@ func (h *APIHandler) handleCron(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "toggled"})
 			return
 		}
+		if req.Action == "reset_runs" {
+			if err := h.sched.ResetRuns(req.Target); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+			return
+		}
 		if req.Action == "run" {
 			if err := h.sched.RunJobNow(req.Target); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())

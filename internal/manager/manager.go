@@ -182,10 +182,12 @@ func (m *Manager) Reload() error {
 				meta.Package = pkgName
 				meta.FilePath = file.Name()
 
-				// Query enabled state from DB
+				// Query enabled state and run count from DB
 				if m.db != nil {
 					enabled, _, _ := m.db.GetFunctionState(pkgName, meta.Name)
 					meta.IsEnabled = enabled
+					runCount, _ := m.db.GetRunCount(pkgName, meta.Name)
+					meta.RunCount = runCount
 				}
 
 				baseFileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))

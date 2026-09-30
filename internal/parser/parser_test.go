@@ -81,3 +81,85 @@ function main(params) {
 		t.Errorf("expected TimeoutSeconds=90, got %d", meta.TimeoutSeconds)
 	}
 }
+
+func TestParseComprehensiveCronAnnotations(t *testing.T) {
+	code := `/**
+ * @cron 0/5 * * * *
+ * @cron_start 2026-10-01 08:00:00
+ * @cron_end 2026-10-10 18:00:00
+ * @timezone Asia/Ho_Chi_Minh
+ * @retry 3 5s
+ * @max_runs 50
+ * @no_overlap true
+ */
+function handle() {}`
+
+	meta, err := parser.Parse(code, "test.js")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.CronExpr != "0/5 * * * *" {
+		t.Errorf("expected cron expr, got %s", meta.CronExpr)
+	}
+	if meta.CronStart != "2026-10-01 08:00:00" {
+		t.Errorf("expected cron start, got %s", meta.CronStart)
+	}
+	if meta.CronEnd != "2026-10-10 18:00:00" {
+		t.Errorf("expected cron end, got %s", meta.CronEnd)
+	}
+	if meta.Timezone != "Asia/Ho_Chi_Minh" {
+		t.Errorf("expected timezone, got %s", meta.Timezone)
+	}
+	if meta.RetryCount != 3 || meta.RetryDelay != "5s" {
+		t.Errorf("expected retry 3 5s, got %d %s", meta.RetryCount, meta.RetryDelay)
+	}
+	if meta.MaxRuns != 50 {
+		t.Errorf("expected max runs 50, got %d", meta.MaxRuns)
+	}
+	if !meta.NoOverlap {
+		t.Errorf("expected no_overlap true")
+	}
+}
+
+func TestParseCronDefaultsAndInvalidDates(t *testing.T) {
+	code := `/**
+ * @cron 0 * * * *
+ * @cron_start 2026-99-99
+ * @retry 2
+ */
+function run() {}`
+
+	meta, err := parser.Parse(code, "invalid_date.js")
+	if err != nil {
+		t.Fatalf("parser should not fail on malformed date: %v", err)
+	}
+	// Invalid start date should be ignored
+	if meta.CronStart != "" {
+		t.Errorf("expected invalid cron_start to be empty/ignored, got %s", meta.CronStart)
+	}
+	// @retry 2 defaults delay to 5s
+	if meta.RetryCount != 2 || meta.RetryDelay != "5s" {
+		t.Errorf("expected retry 2 with default 5s, got %d %s", meta.RetryCount, meta.RetryDelay)
+	}
+	// Cron present without @no_overlap defaults to true
+	if !meta.NoOverlap {
+		t.Errorf("expected no_overlap default to true when @cron is present")
+	}
+}
+
+func TestParseCronNoOverlapExplicitFalse(t *testing.T) {
+	code := `/**
+ * @cron 0 * * * *
+ * @no_overlap false
+ */
+function run() {}`
+
+	meta, err := parser.Parse(code, "no_overlap.js")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.NoOverlap {
+		t.Errorf("expected no_overlap to be false")
+	}
+}
+

@@ -14,10 +14,18 @@ type FunctionMeta struct {
 	Package     string        `json:"package"`
 	FilePath    string        `json:"file_path"`
 	Description string        `json:"description"`
-	CronExpr    string        `json:"cron_expr,omitempty"`
-	IsMCP       bool          `json:"is_mcp"`
-	AllowExec   bool          `json:"allow_exec"`
-	Params      []ParamSchema `json:"params"`
+	CronExpr       string        `json:"cron_expr,omitempty"`
+	CronStart      string        `json:"cron_start,omitempty"`
+	CronEnd        string        `json:"cron_end,omitempty"`
+	Timezone       string        `json:"timezone,omitempty"`
+	RetryCount     int           `json:"retry_count,omitempty"`
+	RetryDelay     string        `json:"retry_delay,omitempty"`
+	MaxRuns        int           `json:"max_runs,omitempty"`
+	RunCount       int           `json:"run_count,omitempty"`
+	NoOverlap      bool          `json:"no_overlap"`
+	IsMCP          bool          `json:"is_mcp"`
+	AllowExec      bool          `json:"allow_exec"`
+	Params         []ParamSchema `json:"params"`
 	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
 	IsEnabled      bool          `json:"is_enabled"`
 	UpdatedAt      time.Time     `json:"updated_at"`
