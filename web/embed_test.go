@@ -212,3 +212,25 @@ func TestComprehensiveCronUIElementsAndI18n(t *testing.T) {
 	}
 }
 
+func TestAppJSComprehensiveCronWiring(t *testing.T) {
+	data, err := web.Assets.ReadFile("js/app.js")
+	if err != nil {
+		t.Fatalf("failed reading js/app.js: %v", err)
+	}
+	appStr := string(data)
+	required := []string{
+		"inspCronToggle",
+		"inspCronStart",
+		"inspCronEnd",
+		"inspTimezone",
+		"inspNoOverlap",
+		"badge-cron-",
+	}
+	for _, req := range required {
+		if !strings.Contains(appStr, req) {
+			t.Fatalf("expected js/app.js to reference %s", req)
+		}
+	}
+}
+
+

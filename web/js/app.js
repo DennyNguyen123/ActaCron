@@ -128,7 +128,7 @@
     document.getElementById("statTotalFuncs").textContent = allFunctions.length;
 
     const cronFuncs = allFunctions.filter(f => f.cron_expr && f.cron_expr.trim() !== "");
-    document.getElementById("statActiveCrons").textContent = cronFuncs.length;
+    document.getElementById("statActiveCrons").textContent = cronFuncs.filter(f => f.is_enabled !== false).length;
 
     const mcpFuncs = allFunctions.filter(f => f.is_mcp);
     document.getElementById("statMcpTools").textContent = mcpFuncs.length;
@@ -136,18 +136,76 @@
     // Cron table
     const cronTbody = document.getElementById("overviewCronTable");
     cronTbody.innerHTML = "";
+
+    let cronJobs = [];
+    try {
+      const res = await fetch("/api/cron");
+      if (res.ok) cronJobs = await res.json();
+    } catch (_) {}
+
+    const jobMap = {};
+    if (Array.isArray(cronJobs)) {
+      cronJobs.forEach(j => { jobMap[`${j.package_name}/${j.function_name}`] = j; });
+    }
+
     if (cronFuncs.length === 0) {
-      cronTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--color-muted-foreground);">No active crons configured</td></tr>';
+      cronTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--color-muted-foreground);">No active crons configured</td></tr>';
     } else {
       cronFuncs.forEach(fn => {
         const tr = document.createElement("tr");
+        const fullKey = `${fn.package}/${fn.name}`;
+        const job = jobMap[fullKey] || {};
+        const status = job.status || (fn.is_enabled !== false ? "active" : "paused");
+        const isEnabled = fn.is_enabled !== false && status !== "paused";
+
+        let badgeClass = "badge-cron-active";
+        if (status === "paused") badgeClass = "badge-cron-paused";
+        else if (status === "pending") badgeClass = "badge-cron-pending";
+        else if (status === "expired") badgeClass = "badge-cron-expired";
+        else if (status === "running") badgeClass = "badge-cron-running";
+        else if (status === "completed") badgeClass = "badge-cron-paused";
+
         const human = window.I18n.cronToString(fn.cron_expr);
+        const tzText = fn.timezone ? `<span style="font-size:10px; color:var(--color-muted-foreground); margin-left:4px;">[${fn.timezone}]</span>` : '';
+
+        let nextRunText = "-";
+        if (job.next_run && !job.next_run.startsWith("0001-01-01")) {
+          const nextDate = new Date(job.next_run);
+          const diffMs = nextDate.getTime() - Date.now();
+          if (diffMs > 0) {
+            const diffMin = Math.round(diffMs / 60000);
+            nextRunText = diffMin < 60 ? `in ${diffMin}m` : nextDate.toLocaleTimeString();
+          } else {
+            nextRunText = nextDate.toLocaleTimeString();
+          }
+        }
+
+        const statusLabel = (window.I18n && window.I18n.t("status_" + status)) || status;
+
         tr.innerHTML = `
           <td><strong>${fn.package}/${fn.name}</strong></td>
-          <td><code>${fn.cron_expr}</code> <span style="font-size:11px; color:var(--color-accent); margin-left:6px;">(${human})</span></td>
-          <td><button class="btn btn-secondary btn-sm" onclick="runFunction('${fn.package}', '${fn.name}')">Run Now</button></td>
+          <td><code>${fn.cron_expr}</code> ${tzText}<div style="font-size:11px; color:var(--color-accent); margin-top:2px;">${human}</div></td>
+          <td><span class="${badgeClass}">${statusLabel}</span></td>
+          <td style="font-size:12px;">${nextRunText}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="runFunction('${fn.package}', '${fn.name}')">Run Now</button>
+              <label class="switch-label" title="Toggle Cron Active" style="margin:0;">
+                <input type="checkbox" class="switch-input cron-table-toggle" data-pkg="${fn.package}" data-name="${fn.name}" ${isEnabled ? "checked" : ""}>
+              </label>
+            </div>
+          </td>
         `;
         cronTbody.appendChild(tr);
+      });
+
+      cronTbody.querySelectorAll(".cron-table-toggle").forEach(toggle => {
+        toggle.addEventListener("change", async (e) => {
+          const pkg = e.target.getAttribute("data-pkg");
+          const name = e.target.getAttribute("data-name");
+          const enabled = e.target.checked;
+          await toggleCronJob(pkg, name, enabled);
+        });
       });
     }
 
@@ -176,6 +234,30 @@
         }
       }
     } catch (_) {}
+  }
+
+  async function toggleCronJob(pkg, name, enabled) {
+    const fullKey = `${pkg}/${name}`;
+    try {
+      const res = await fetch("/api/cron", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle", target: fullKey, enable: enabled })
+      });
+      if (res.ok) {
+        const fn = allFunctions.find(f => f.package === pkg && f.name === name);
+        if (fn) fn.is_enabled = enabled;
+        if (activeScript && activeScript.package === pkg && activeScript.name === name) {
+          activeScript.is_enabled = enabled;
+          const inspToggle = document.getElementById("inspCronToggle");
+          if (inspToggle) inspToggle.checked = enabled;
+        }
+        renderTree(allFunctions);
+        loadOverview();
+      }
+    } catch (err) {
+      alert("Failed to toggle cron: " + err.message);
+    }
   }
 
   // --- Functions / Workspace ---
@@ -284,7 +366,13 @@
 
         const badges = [];
         if (fn.is_mcp) badges.push('<span class="badge-mcp-mini">MCP</span>');
-        if (fn.cron_expr) badges.push('<span class="badge-cron-mini">CRON</span>');
+        if (fn.cron_expr) {
+          if (fn.is_enabled === false) {
+            badges.push('<span class="badge-cron-paused" style="font-size:9px; padding:1px 4px;">PAUSED</span>');
+          } else {
+            badges.push('<span class="badge-cron-mini">CRON</span>');
+          }
+        }
 
         itemLi.innerHTML = `
           <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; margin-right:6px;" title="${fn.name}">${fn.name}</span>
@@ -333,8 +421,29 @@
     } catch (_) {}
 
     // Update inspector
+    const cronToggle = document.getElementById("inspCronToggle");
+    if (cronToggle) cronToggle.checked = (fn.is_enabled !== false && !!fn.cron_expr);
     document.getElementById("inspCronExpr").value = fn.cron_expr || "";
     updateInspectorCronHuman();
+
+    const tzInput = document.getElementById("inspTimezone");
+    if (tzInput) tzInput.value = fn.timezone || "";
+
+    const startInput = document.getElementById("inspCronStart");
+    if (startInput) startInput.value = fn.cron_start ? fn.cron_start.replace(" ", "T").substring(0, 16) : "";
+
+    const endInput = document.getElementById("inspCronEnd");
+    if (endInput) endInput.value = fn.cron_end ? fn.cron_end.replace(" ", "T").substring(0, 16) : "";
+
+    const maxRunsInput = document.getElementById("inspMaxRuns");
+    if (maxRunsInput) maxRunsInput.value = fn.max_runs ? fn.max_runs : "";
+
+    const retryInput = document.getElementById("inspRetryCount");
+    if (retryInput) retryInput.value = fn.retry_count ? fn.retry_count : "";
+
+    const overlapInput = document.getElementById("inspNoOverlap");
+    if (overlapInput) overlapInput.checked = fn.no_overlap !== false;
+
     const mcpToggle = document.getElementById("inspMcpToggle");
     if (mcpToggle) mcpToggle.checked = !!fn.is_mcp;
 
@@ -369,9 +478,24 @@
     if (btnActiveWs) btnActiveWs.style.display = "none";
     const inspWsSection = document.getElementById("inspectorWsSection");
     if (inspWsSection) inspWsSection.style.display = "none";
+
+    const cronToggle = document.getElementById("inspCronToggle");
+    if (cronToggle) cronToggle.checked = false;
     const inspCron = document.getElementById("inspCronExpr");
     if (inspCron) inspCron.value = "";
     updateInspectorCronHuman();
+    const tzInput = document.getElementById("inspTimezone");
+    if (tzInput) tzInput.value = "";
+    const startInput = document.getElementById("inspCronStart");
+    if (startInput) startInput.value = "";
+    const endInput = document.getElementById("inspCronEnd");
+    if (endInput) endInput.value = "";
+    const maxRunsInput = document.getElementById("inspMaxRuns");
+    if (maxRunsInput) maxRunsInput.value = "";
+    const retryInput = document.getElementById("inspRetryCount");
+    if (retryInput) retryInput.value = "";
+    const overlapInput = document.getElementById("inspNoOverlap");
+    if (overlapInput) overlapInput.checked = true;
     const mcpToggle = document.getElementById("inspMcpToggle");
     if (mcpToggle) mcpToggle.checked = false;
   }
@@ -432,49 +556,81 @@
     }
   }
 
+  function updateJSDocTag(tag, value) {
+    const editor = document.getElementById("scriptEditor");
+    if (!editor) return;
+    let code = editor.value;
+    const tagRegex = new RegExp(`([ \\t]*\\*[ \\t]*@${tag})[ \\t]+([^\\r\\n]*)`);
+    if (tagRegex.test(code)) {
+      if (value !== null && value !== "" && value !== undefined) {
+        code = code.replace(tagRegex, `$1 ${value}`);
+      } else {
+        code = code.replace(new RegExp(`([ \\t]*\\*[ \\t]*@${tag}[^\\r\\n]*\\r?\\n?)`), "");
+      }
+    } else if (value !== null && value !== "" && value !== undefined) {
+      if (code.includes("/**")) {
+        code = code.replace(/(\/\*\*[\r\n]+)/, `$1 * @${tag} ${value}\n`);
+      } else {
+        code = `/**\n * @${tag} ${value}\n */\n` + code;
+      }
+    }
+    editor.value = code;
+  }
+
   function onInspectorCronChange() {
     const newCron = document.getElementById("inspCronExpr").value.trim();
     updateInspectorCronHuman();
-
-    const editor = document.getElementById("scriptEditor");
-    let code = editor.value;
-
-    const cronRegex = /([ \t]*\*[ \t]*@cron)[ \t]+([^\r\n]*)/;
-    if (cronRegex.test(code)) {
-      if (newCron) {
-        code = code.replace(cronRegex, `$1 ${newCron}`);
-      } else {
-        code = code.replace(/([ \t]*\*[ \t]*@cron[^\r\n]*\r?\n?)/, "");
-      }
-    } else if (newCron) {
-      if (code.includes("/**")) {
-        code = code.replace(/(\/\*\*[\r\n]+)/, `$1 * @cron ${newCron}\n`);
-      } else {
-        code = `/**\n * @cron ${newCron}\n */\n` + code;
-      }
-    }
-
-    editor.value = code;
+    updateJSDocTag("cron", newCron);
     if (activeScript) activeScript.cron_expr = newCron;
+  }
+
+  function onInspectorTimezoneChange() {
+    const tz = document.getElementById("inspTimezone").value.trim();
+    updateJSDocTag("timezone", tz);
+    if (activeScript) activeScript.timezone = tz;
+  }
+
+  function onInspectorCronStartChange() {
+    const startVal = document.getElementById("inspCronStart").value.trim();
+    const formatted = startVal ? startVal.replace("T", " ") : "";
+    updateJSDocTag("cron_start", formatted);
+    if (activeScript) activeScript.cron_start = formatted;
+  }
+
+  function onInspectorCronEndChange() {
+    const endVal = document.getElementById("inspCronEnd").value.trim();
+    const formatted = endVal ? endVal.replace("T", " ") : "";
+    updateJSDocTag("cron_end", formatted);
+    if (activeScript) activeScript.cron_end = formatted;
+  }
+
+  function onInspectorMaxRunsChange() {
+    const runs = document.getElementById("inspMaxRuns").value.trim();
+    updateJSDocTag("max_runs", runs && runs !== "0" ? runs : "");
+    if (activeScript) activeScript.max_runs = parseInt(runs, 10) || 0;
+  }
+
+  function onInspectorRetryCountChange() {
+    const retry = document.getElementById("inspRetryCount").value.trim();
+    updateJSDocTag("retry", retry && retry !== "0" ? `${retry} 5s` : "");
+    if (activeScript) activeScript.retry_count = parseInt(retry, 10) || 0;
+  }
+
+  function onInspectorNoOverlapChange() {
+    const checked = document.getElementById("inspNoOverlap").checked;
+    updateJSDocTag("no_overlap", checked ? "true" : "false");
+    if (activeScript) activeScript.no_overlap = checked;
+  }
+
+  async function onInspectorCronToggle() {
+    if (!activeScript) return;
+    const isChecked = document.getElementById("inspCronToggle").checked;
+    await toggleCronJob(activeScript.package, activeScript.name, isChecked);
   }
 
   function onInspectorMcpToggle() {
     const isMcp = document.getElementById("inspMcpToggle").checked;
-    const editor = document.getElementById("scriptEditor");
-    let code = editor.value;
-
-    const mcpRegex = /([ \t]*\*[ \t]*@mcp)[ \t]+([^\r\n]*)/;
-    if (mcpRegex.test(code)) {
-      code = code.replace(mcpRegex, `$1 ${isMcp}`);
-    } else {
-      if (code.includes("/**")) {
-        code = code.replace(/(\/\*\*[\r\n]+)/, `$1 * @mcp ${isMcp}\n`);
-      } else {
-        code = `/**\n * @mcp ${isMcp}\n */\n` + code;
-      }
-    }
-
-    editor.value = code;
+    updateJSDocTag("mcp", isMcp ? "true" : "false");
     if (activeScript) activeScript.is_mcp = isMcp;
   }
 
@@ -487,10 +643,46 @@
       updateInspectorCronHuman();
     }
 
+    const tzMatch = code.match(/@timezone[ \t]+([^\r\n*]+)/);
+    const tzInput = document.getElementById("inspTimezone");
+    if (tzInput && document.activeElement !== tzInput) {
+      tzInput.value = tzMatch ? tzMatch[1].trim() : "";
+    }
+
+    const startMatch = code.match(/@cron_start[ \t]+([^\r\n*]+)/);
+    const startInput = document.getElementById("inspCronStart");
+    if (startInput && document.activeElement !== startInput) {
+      startInput.value = startMatch ? startMatch[1].trim().replace(" ", "T").substring(0, 16) : "";
+    }
+
+    const endMatch = code.match(/@cron_end[ \t]+([^\r\n*]+)/);
+    const endInput = document.getElementById("inspCronEnd");
+    if (endInput && document.activeElement !== endInput) {
+      endInput.value = endMatch ? endMatch[1].trim().replace(" ", "T").substring(0, 16) : "";
+    }
+
+    const maxRunsMatch = code.match(/@max_runs[ \t]+([^\r\n*]+)/);
+    const maxRunsInput = document.getElementById("inspMaxRuns");
+    if (maxRunsInput && document.activeElement !== maxRunsInput) {
+      maxRunsInput.value = maxRunsMatch ? maxRunsMatch[1].trim() : "";
+    }
+
+    const retryMatch = code.match(/@retry[ \t]+([0-9]+)/);
+    const retryInput = document.getElementById("inspRetryCount");
+    if (retryInput && document.activeElement !== retryInput) {
+      retryInput.value = retryMatch ? retryMatch[1].trim() : "";
+    }
+
+    const overlapMatch = code.match(/@no_overlap[ \t]+(true|false)/);
+    const overlapCheckbox = document.getElementById("inspNoOverlap");
+    if (overlapCheckbox && document.activeElement !== overlapCheckbox) {
+      overlapCheckbox.checked = overlapMatch ? overlapMatch[1] === "true" : true;
+    }
+
     const mcpMatch = code.match(/@mcp[ \t]+(true|false)/);
     const mcpToggle = document.getElementById("inspMcpToggle");
-    if (mcpToggle && mcpMatch) {
-      mcpToggle.checked = mcpMatch[1] === "true";
+    if (mcpToggle && document.activeElement !== mcpToggle) {
+      mcpToggle.checked = mcpMatch ? mcpMatch[1] === "true" : false;
     }
   }
 
@@ -515,8 +707,24 @@
     });
 
     editor.addEventListener("input", syncInspectorFromCode);
-    document.getElementById("inspCronExpr").addEventListener("input", onInspectorCronChange);
-    document.getElementById("inspMcpToggle").addEventListener("change", onInspectorMcpToggle);
+    const cronToggle = document.getElementById("inspCronToggle");
+    if (cronToggle) cronToggle.addEventListener("change", onInspectorCronToggle);
+    const cronExpr = document.getElementById("inspCronExpr");
+    if (cronExpr) cronExpr.addEventListener("input", onInspectorCronChange);
+    const tzInput = document.getElementById("inspTimezone");
+    if (tzInput) tzInput.addEventListener("input", onInspectorTimezoneChange);
+    const cronStart = document.getElementById("inspCronStart");
+    if (cronStart) cronStart.addEventListener("change", onInspectorCronStartChange);
+    const cronEnd = document.getElementById("inspCronEnd");
+    if (cronEnd) cronEnd.addEventListener("change", onInspectorCronEndChange);
+    const maxRuns = document.getElementById("inspMaxRuns");
+    if (maxRuns) maxRuns.addEventListener("input", onInspectorMaxRunsChange);
+    const retryCount = document.getElementById("inspRetryCount");
+    if (retryCount) retryCount.addEventListener("input", onInspectorRetryCountChange);
+    const noOverlap = document.getElementById("inspNoOverlap");
+    if (noOverlap) noOverlap.addEventListener("change", onInspectorNoOverlapChange);
+    const mcpToggle = document.getElementById("inspMcpToggle");
+    if (mcpToggle) mcpToggle.addEventListener("change", onInspectorMcpToggle);
 
     document.getElementById("btnSaveScript").addEventListener("click", saveCurrentScript);
     document.getElementById("btnRunScript").addEventListener("click", runCurrentScript);
