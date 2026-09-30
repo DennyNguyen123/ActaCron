@@ -399,20 +399,24 @@ main.app-main {
 }
 
 .btn-pkg-action {
-  background: none;
-  border: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
   color: var(--color-muted-foreground);
-  font-size: 12px;
-  line-height: 1;
+  font-size: 11px;
+  line-height: 1.2;
   transition: all 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .btn-pkg-action:hover {
-  background-color: var(--color-muted);
+  background-color: var(--color-surface-hover);
   color: var(--color-foreground);
+  border-color: var(--color-accent);
 }
 
 .badge-shared-library {

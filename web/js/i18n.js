@@ -30,6 +30,10 @@
       output_console: "Execution Output & Logs",
       execution_time: "Execution Time",
       copy_snippet: "Copy MCP Config",
+      workspace_env_btn: "Workspace .env",
+      workspace_info_label: "Workspace & Environment",
+      configure_env: "⚙️ Config & .env",
+      ws_config_tooltip: "Workspace Settings & .env",
 
       logs_title: "Execution Logs",
       filter_func: "Filter by Function",
@@ -130,6 +134,10 @@
       output_console: "Kết quả thực thi & Nhật ký",
       execution_time: "Thời gian thực thi",
       copy_snippet: "Sao chép cấu hình MCP",
+      workspace_env_btn: "Biến môi trường (.env)",
+      workspace_info_label: "Workspace & Môi trường",
+      configure_env: "⚙️ Cấu hình & .env",
+      ws_config_tooltip: "Cấu hình Workspace & .env",
 
       logs_title: "Nhật ký thực thi",
       filter_func: "Lọc theo hàm",
