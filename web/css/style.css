@@ -315,11 +315,28 @@ main.app-main {
 /* Tree Pane (Left) */
 .tree-pane {
   width: 250px;
+  min-width: 200px;
+  max-width: 600px;
   background-color: var(--color-card);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+.layout-resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background 150ms ease;
+  margin: 0 -2px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.layout-resizer:hover,
+.layout-resizer.dragging {
+  background: var(--color-accent);
 }
 
 .pane-header {
@@ -613,6 +630,8 @@ textarea.code-editor {
 /* Inspector Pane (Right) */
 .inspector-pane {
   width: 320px;
+  min-width: 200px;
+  max-width: 600px;
   background-color: var(--color-card);
   border-left: 1px solid var(--color-border);
   display: flex;

@@ -133,7 +133,7 @@
       <section class="view-page" id="view-workspace">
         <div class="workspace-layout">
           <!-- Tree Pane (Left) -->
-          <aside class="tree-pane">
+          <aside class="tree-pane" id="treePane">
             <div class="pane-header">
               <span data-i18n="scripts_tree">Packages & Scripts</span>
               <div style="display:flex; gap:4px;">
@@ -144,6 +144,8 @@
             </div>
             <ul class="tree-list" id="scriptsTree"></ul>
           </aside>
+
+          <div class="layout-resizer" id="resizerLeft"></div>
 
           <!-- Editor Pane (Center) -->
           <div class="editor-pane">
@@ -176,7 +178,8 @@
           </div>
 
           <!-- Inspector Pane (Right) -->
-          <aside class="inspector-pane">
+          <div class="layout-resizer" id="resizerRight"></div>
+          <aside class="inspector-pane" id="inspectorPane">
             <div class="pane-header">
               <span>Script Inspector</span>
             </div>
@@ -550,8 +553,12 @@
         <div class="form-group">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
             <label style="margin-bottom:0;">Workspace Environment (.env)</label>
-            <button class="btn btn-secondary btn-sm" id="btnAddWsEnvRow" style="padding: 2px 8px; font-size: 11px;">+ Add Variable</button>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-outline btn-sm" id="btnLoadWsEnvExample" style="display:none; padding: 2px 8px; font-size: 11px;" data-i18n="load_from_example">📄 Load from .env.example</button>
+              <button class="btn btn-secondary btn-sm" id="btnAddWsEnvRow" style="padding: 2px 8px; font-size: 11px;">+ Add Variable</button>
+            </div>
           </div>
+          <div id="wsEnvExampleHint" style="display:none; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); border-radius:var(--radius-sm); padding:6px 10px; margin-bottom:8px; font-size:11px; color:#38bdf8;" data-i18n="env_example_hint">💡 Pre-filled with template values from .env.example. Save configuration to persist to .env.</div>
           <div class="form-help" style="margin-bottom: 8px;">Variables defined here override the global .env for scripts in this workspace.</div>
           <div class="env-table" id="wsEnvTableRows" style="max-height: 220px; overflow-y: auto;"></div>
         </div>

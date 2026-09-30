@@ -74,5 +74,38 @@ func TestI18nTitleSupport(t *testing.T) {
 	}
 }
 
+func TestResizableLayoutAndExampleEnvElements(t *testing.T) {
+	htmlData, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed reading index.html: %v", err)
+	}
+	htmlStr := string(htmlData)
 
+	htmlElements := []string{
+		`id="resizerLeft"`,
+		`id="resizerRight"`,
+		`id="btnLoadWsEnvExample"`,
+		`id="wsEnvExampleHint"`,
+	}
+	for _, el := range htmlElements {
+		if !strings.Contains(htmlStr, el) {
+			t.Fatalf("expected index.html to contain element %s", el)
+		}
+	}
 
+	i18nData, err := web.Assets.ReadFile("js/i18n.js")
+	if err != nil {
+		t.Fatalf("failed reading js/i18n.js: %v", err)
+	}
+	i18nStr := string(i18nData)
+
+	i18nKeys := []string{
+		`load_from_example:`,
+		`env_example_hint:`,
+	}
+	for _, key := range i18nKeys {
+		if !strings.Contains(i18nStr, key) {
+			t.Fatalf("expected js/i18n.js to contain key %s", key)
+		}
+	}
+}

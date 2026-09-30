@@ -34,6 +34,8 @@
       workspace_info_label: "Workspace & Environment",
       configure_env: "⚙️ Config & .env",
       ws_config_tooltip: "Workspace Settings & .env",
+      load_from_example: "📄 Load .env.example",
+      env_example_hint: "💡 Pre-filled with template values from .env.example. Save configuration to persist to .env.",
 
       logs_title: "Execution Logs",
       filter_func: "Filter by Function",
@@ -138,6 +140,8 @@
       workspace_info_label: "Workspace & Môi trường",
       configure_env: "⚙️ Cấu hình & .env",
       ws_config_tooltip: "Cấu hình Workspace & .env",
+      load_from_example: "📄 Tải từ .env.example",
+      env_example_hint: "💡 Đã tự động điền giá trị mẫu từ .env.example. Bấm Lưu cấu hình để tạo tệp .env.",
 
       logs_title: "Nhật ký thực thi",
       filter_func: "Lọc theo hàm",
