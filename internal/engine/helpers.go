@@ -161,42 +161,9 @@ func registerHTTP(vm *goja.Runtime) {
 	httpObj := vm.NewObject()
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	httpObj.Set("get", func(call goja.FunctionCall) goja.Value {
+	doRequestWithBody := func(method string, call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
-			panic(vm.ToValue("http.get requires a url argument"))
-		}
-		url := call.Arguments[0].String()
-
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			panic(vm.ToValue(err.Error()))
-		}
-
-		if len(call.Arguments) > 1 {
-			if headers, ok := call.Arguments[1].Export().(map[string]interface{}); ok {
-				for k, v := range headers {
-					req.Header.Set(k, fmt.Sprint(v))
-				}
-			}
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			panic(vm.ToValue(err.Error()))
-		}
-		defer resp.Body.Close()
-
-		body, _ := io.ReadAll(resp.Body)
-
-		resObj := vm.NewObject()
-		resObj.Set("status", resp.StatusCode)
-		resObj.Set("body", string(body))
-		return resObj
-	})
-
-	httpObj.Set("post", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) == 0 {
-			panic(vm.ToValue("http.post requires a url argument"))
+			panic(vm.ToValue("http." + strings.ToLower(method) + " requires a url argument"))
 		}
 		url := call.Arguments[0].String()
 
@@ -212,7 +179,7 @@ func registerHTTP(vm *goja.Runtime) {
 			}
 		}
 
-		req, err := http.NewRequest("POST", url, bodyReader)
+		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
 			panic(vm.ToValue(err.Error()))
 		}
@@ -238,6 +205,55 @@ func registerHTTP(vm *goja.Runtime) {
 		resObj.Set("status", resp.StatusCode)
 		resObj.Set("body", string(respBody))
 		return resObj
+	}
+
+	doRequestNoBody := func(method string, call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(vm.ToValue("http." + strings.ToLower(method) + " requires a url argument"))
+		}
+		url := call.Arguments[0].String()
+
+		req, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			panic(vm.ToValue(err.Error()))
+		}
+
+		if len(call.Arguments) > 1 {
+			if headers, ok := call.Arguments[1].Export().(map[string]interface{}); ok {
+				for k, v := range headers {
+					req.Header.Set(k, fmt.Sprint(v))
+				}
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			panic(vm.ToValue(err.Error()))
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+
+		resObj := vm.NewObject()
+		resObj.Set("status", resp.StatusCode)
+		resObj.Set("body", string(body))
+		return resObj
+	}
+
+	httpObj.Set("get", func(call goja.FunctionCall) goja.Value {
+		return doRequestNoBody("GET", call)
+	})
+	httpObj.Set("delete", func(call goja.FunctionCall) goja.Value {
+		return doRequestNoBody("DELETE", call)
+	})
+	httpObj.Set("post", func(call goja.FunctionCall) goja.Value {
+		return doRequestWithBody("POST", call)
+	})
+	httpObj.Set("put", func(call goja.FunctionCall) goja.Value {
+		return doRequestWithBody("PUT", call)
+	})
+	httpObj.Set("patch", func(call goja.FunctionCall) goja.Value {
+		return doRequestWithBody("PATCH", call)
 	})
 
 	vm.Set("http", httpObj)
