@@ -232,7 +232,7 @@
       const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
       const actionButtons = `
         <div style="display:flex; align-items:center; gap:4px;">
-          ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
+          ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" data-i18n-title="ws_config_tooltip" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
           <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
         </div>
       `;

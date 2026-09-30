@@ -56,4 +56,23 @@ func TestAppJSEventWiring(t *testing.T) {
 	}
 }
 
+func TestI18nTitleSupport(t *testing.T) {
+	i18nData, err := web.Assets.ReadFile("js/i18n.js")
+	if err != nil {
+		t.Fatalf("failed reading js/i18n.js: %v", err)
+	}
+	if !strings.Contains(string(i18nData), "data-i18n-title") {
+		t.Fatalf("expected js/i18n.js to support data-i18n-title attribute")
+	}
+
+	htmlData, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed reading index.html: %v", err)
+	}
+	if !strings.Contains(string(htmlData), `data-i18n-title="ws_config_tooltip"`) {
+		t.Fatalf("expected index.html to contain data-i18n-title=\"ws_config_tooltip\"")
+	}
+}
+
+
 
