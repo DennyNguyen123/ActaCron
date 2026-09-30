@@ -23,3 +23,23 @@ func TestEmbeddedFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceUIElements(t *testing.T) {
+	data, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed reading index.html: %v", err)
+	}
+	htmlStr := string(data)
+	requiredElements := []string{
+		`id="btnActiveWsConfig"`,
+		`id="inspectorWsSection"`,
+		`id="inspWsName"`,
+		`id="btnInspWsConfig"`,
+	}
+	for _, el := range requiredElements {
+		if !strings.Contains(htmlStr, el) {
+			t.Fatalf("expected index.html to contain element %s", el)
+		}
+	}
+}
+

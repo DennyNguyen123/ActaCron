@@ -152,6 +152,9 @@
                 <span>Select a script to edit</span>
               </div>
               <div class="editor-actions">
+                <button class="btn btn-outline btn-sm" id="btnActiveWsConfig" style="display:none;" title="Workspace Config & .env">
+                  ⚙️ <span data-i18n="workspace_env_btn">Workspace .env</span>
+                </button>
                 <button class="btn btn-secondary btn-sm" id="btnSaveScript" data-i18n="save_script">Save (Ctrl+S)</button>
                 <button class="btn btn-primary btn-sm" id="btnRunScript" data-i18n="run_script">Run (Ctrl+Enter)</button>
                 <button class="btn btn-outline btn-sm" id="btnDeleteScript" style="display:none; color:var(--color-danger); border-color:rgba(239,68,68,0.35);" data-i18n="delete_script">🗑️ Delete</button>
@@ -176,6 +179,17 @@
           <aside class="inspector-pane">
             <div class="pane-header">
               <span>Script Inspector</span>
+            </div>
+
+            <div class="inspector-section" id="inspectorWsSection" style="display:none;">
+              <span class="inspector-label" data-i18n="workspace_info_label">Workspace & Environment</span>
+              <div style="display:flex; justify-content:space-between; align-items:center; background:var(--color-surface); padding:6px 10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); margin-top:4px;">
+                <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
+                  <span style="font-size:13px;">📁</span>
+                  <span id="inspWsName" style="font-size:12px; font-weight:600; color:var(--color-foreground); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">default</span>
+                </div>
+                <button class="btn btn-outline btn-sm" id="btnInspWsConfig" style="padding:2px 8px; font-size:11px; white-space:nowrap;" data-i18n="configure_env">⚙️ Config & .env</button>
+              </div>
             </div>
 
             <div class="inspector-section">
