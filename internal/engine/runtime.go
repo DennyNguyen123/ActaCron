@@ -42,6 +42,15 @@ func (r *Runner) SetAllowShell(allow bool) {
 	r.allowShell = allow
 }
 
+func (r *Runner) DefaultTimeoutSec() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.defaultTimeoutSec <= 0 {
+		return 30
+	}
+	return r.defaultTimeoutSec
+}
+
 func (r *Runner) Execute(
 	ctx context.Context,
 	pkgName string,

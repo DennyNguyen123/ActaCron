@@ -81,8 +81,11 @@ func (s *Scheduler) Reschedule() {
 		fullKey := fn.Package + "/" + fn.Name
 		targetKey := fullKey
 
+		pkgName := fn.Package
+		funcName := fn.Name
 		entryID, err := s.cron.AddFunc(fn.CronExpr, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			timeout := s.mgr.GetEffectiveTimeout(pkgName, funcName)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			s.mgr.CallWithTrigger(ctx, targetKey, nil, "cron")
 		})

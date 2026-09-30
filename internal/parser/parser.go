@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ var (
 	cronRegex       = regexp.MustCompile(`@cron\s+([^\r\n]+)`)
 	mcpRegex        = regexp.MustCompile(`@mcp\s+(true|false)`)
 	allowExecRegex  = regexp.MustCompile(`@allowExec\s+(true|false)`)
+	timeoutRegex    = regexp.MustCompile(`@timeout\s+([0-9]+)`)
 	paramRegex      = regexp.MustCompile(`@param\s+\{([^}]+)\}\s+([a-zA-Z0-9_-]+)(?:\s*-\s*([^\r\n]+))?`)
 	cronParserValid = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 )
@@ -75,6 +77,12 @@ func Parse(code string, filename string) (*domain.FunctionMeta, error) {
 
 		if execMatch := allowExecRegex.FindStringSubmatch(doc); len(execMatch) > 1 {
 			meta.AllowExec = execMatch[1] == "true"
+		}
+
+		if timeoutMatch := timeoutRegex.FindStringSubmatch(doc); len(timeoutMatch) > 1 {
+			if sec, err := strconv.Atoi(timeoutMatch[1]); err == nil && sec > 0 {
+				meta.TimeoutSeconds = sec
+			}
 		}
 
 		paramMatches := paramRegex.FindAllStringSubmatch(doc, -1)

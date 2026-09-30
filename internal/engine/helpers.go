@@ -257,13 +257,42 @@ func registerSleep(vm *goja.Runtime) {
 }
 
 func registerEnv(vm *goja.Runtime) {
-	vm.Set("env", func(call goja.FunctionCall) goja.Value {
+	RegisterEnv(vm, nil, nil)
+}
+
+func RegisterEnv(vm *goja.Runtime, resolver func(string) string, allVars map[string]string) {
+	envFn := func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			return vm.ToValue("")
 		}
 		key := call.Arguments[0].String()
+		if resolver != nil {
+			return vm.ToValue(resolver(key))
+		}
 		return vm.ToValue(os.Getenv(key))
-	})
+	}
+
+	envVal := vm.ToValue(envFn)
+	if obj, ok := envVal.(*goja.Object); ok {
+		obj.Set("get", envFn)
+		obj.Set("all", func(call goja.FunctionCall) goja.Value {
+			res := make(map[string]string)
+			if allVars != nil {
+				for k, v := range allVars {
+					res[k] = v
+				}
+			} else {
+				for _, e := range os.Environ() {
+					parts := strings.SplitN(e, "=", 2)
+					if len(parts) == 2 {
+						res[parts[0]] = parts[1]
+					}
+				}
+			}
+			return vm.ToValue(res)
+		})
+	}
+	vm.Set("env", envVal)
 }
 
 func registerExec(vm *goja.Runtime, allowExec bool) {

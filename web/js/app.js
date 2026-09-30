@@ -195,6 +195,13 @@
     const tree = document.getElementById("scriptsTree");
     tree.innerHTML = "";
 
+    // Load collapsed package states from localStorage
+    let collapsedPackages = new Set();
+    try {
+      const saved = localStorage.getItem("actacron_collapsed_pkgs");
+      if (saved) collapsedPackages = new Set(JSON.parse(saved));
+    } catch (e) {}
+
     // Group by package
     const grouped = {};
     funcs.forEach(f => {
@@ -202,25 +209,69 @@
       grouped[f.package].push(f);
     });
 
-    Object.keys(grouped).forEach(pkgName => {
-      const pkgLi = document.createElement("li");
-      pkgLi.className = "tree-package-header";
-      pkgLi.innerHTML = `
-        <div style="display:flex; align-items:center; gap:6px;">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-          <span>${pkgName}</span>
+    const pkgNames = Object.keys(grouped).sort((a, b) => {
+      if (a === "_shared") return -1;
+      if (b === "_shared") return 1;
+      return a.localeCompare(b);
+    });
+
+    pkgNames.forEach(pkgName => {
+      const isShared = pkgName === "_shared";
+      const isCollapsed = collapsedPackages.has(pkgName);
+
+      const groupLi = document.createElement("li");
+      groupLi.className = "tree-package-group" + (isCollapsed ? " collapsed" : "");
+
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "tree-package-header" + (isShared ? " shared-package" : "");
+
+      const headerTitle = isShared 
+        ? `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><span>🔗</span> <strong>_shared</strong> <span class="badge-shared-library">LIB</span></div>`
+        : `<div style="display:flex; align-items:center; gap:6px;"><span class="tree-chevron">▾</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span>${pkgName}</span></div>`;
+
+      const actionButtons = `
+        <div style="display:flex; align-items:center; gap:4px;">
+          ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" title="Workspace Config" data-pkg="${pkgName}">⚙️</button>` : ''}
+          <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
         </div>
-        <button class="btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
       `;
 
-      const folderBtn = pkgLi.querySelector(".btn-pkg-folder");
+      headerDiv.innerHTML = headerTitle + actionButtons;
+
+      // Click header toggles collapse/expand (ignore if clicked on action buttons)
+      headerDiv.addEventListener("click", (e) => {
+        if (e.target.closest(".btn-pkg-action")) return;
+        groupLi.classList.toggle("collapsed");
+        if (groupLi.classList.contains("collapsed")) {
+          collapsedPackages.add(pkgName);
+        } else {
+          collapsedPackages.delete(pkgName);
+        }
+        try {
+          localStorage.setItem("actacron_collapsed_pkgs", JSON.stringify([...collapsedPackages]));
+        } catch (err) {}
+      });
+
+      const folderBtn = headerDiv.querySelector(".btn-pkg-folder");
       if (folderBtn) {
         folderBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           openWorkspaceFolder(pkgName);
         });
       }
-      tree.appendChild(pkgLi);
+
+      const configBtn = headerDiv.querySelector(".btn-pkg-config");
+      if (configBtn) {
+        configBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openWorkspaceConfigModal(pkgName);
+        });
+      }
+
+      groupLi.appendChild(headerDiv);
+
+      const fileUl = document.createElement("ul");
+      fileUl.className = "tree-file-list";
 
       grouped[pkgName].forEach(fn => {
         const itemLi = document.createElement("li");
@@ -237,9 +288,9 @@
           <span>${fn.name}</span>
           <div style="display:flex; gap:4px; align-items:center;">
             ${badges.join("")}
-            <button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
+            ${!isShared ? `<button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
+            </button>` : ''}
           </div>
         `;
 
@@ -251,8 +302,11 @@
             deleteScript(fn.package, fn.file_path || (fn.name + ".js"), fn.name);
           });
         }
-        tree.appendChild(itemLi);
+        fileUl.appendChild(itemLi);
       });
+
+      groupLi.appendChild(fileUl);
+      tree.appendChild(groupLi);
     });
   }
 
@@ -1017,5 +1071,109 @@ function main(params) {
         btn.disabled = false;
       }
     });
+
+    // Workspace Config Modal
+    const modalWs = document.getElementById("modalWorkspaceConfig");
+    const closeWsModal = () => modalWs.classList.remove("open");
+    document.getElementById("btnCloseWsConfig").addEventListener("click", closeWsModal);
+    document.getElementById("btnCancelWsConfig").addEventListener("click", closeWsModal);
+    document.getElementById("btnSaveWsConfig").addEventListener("click", saveWorkspaceConfig);
+    document.getElementById("btnAddWsEnvRow").addEventListener("click", () => addWsEnvRow("", ""));
+  }
+
+  // --- Workspace Config Helpers ---
+  async function openWorkspaceConfigModal(pkgName) {
+    const modal = document.getElementById("modalWorkspaceConfig");
+    document.getElementById("modalWsConfigTitle").textContent = "Workspace Configuration: " + pkgName;
+    document.getElementById("wsConfigPkgName").value = pkgName;
+
+    const timeoutInput = document.getElementById("wsConfigTimeout");
+    const descInput = document.getElementById("wsConfigDesc");
+    const envContainer = document.getElementById("wsEnvTableRows");
+
+    timeoutInput.value = "30";
+    descInput.value = "";
+    envContainer.innerHTML = "<div style='color:var(--color-muted-foreground); font-size:12px; padding:6px;'>Loading configuration...</div>";
+    modal.classList.add("open");
+
+    try {
+      const res = await fetch("/api/workspace/config?package=" + encodeURIComponent(pkgName));
+      if (res.ok) {
+        const data = await res.json();
+        timeoutInput.value = data.timeout_seconds || 30;
+        descInput.value = data.description || "";
+        renderWsEnvRows(data.env || {});
+      } else {
+        renderWsEnvRows({});
+      }
+    } catch (err) {
+      console.error("Failed to load workspace config", err);
+      renderWsEnvRows({});
+    }
+  }
+
+  function renderWsEnvRows(envMap) {
+    const container = document.getElementById("wsEnvTableRows");
+    container.innerHTML = "";
+    const keys = Object.keys(envMap || {});
+    if (keys.length === 0) {
+      addWsEnvRow("", "");
+      return;
+    }
+    keys.sort().forEach(k => addWsEnvRow(k, envMap[k]));
+  }
+
+  function addWsEnvRow(key, val) {
+    const container = document.getElementById("wsEnvTableRows");
+    const row = document.createElement("div");
+    row.className = "ws-env-row";
+    row.style.cssText = "display:flex; gap:8px; margin-bottom:8px; align-items:center;";
+    row.innerHTML = `
+      <input type="text" class="ws-env-key" placeholder="KEY" value="${key || ''}" style="flex:1; font-family:var(--font-heading); font-size:12px;">
+      <input type="text" class="ws-env-val" placeholder="VALUE" value="${val || ''}" style="flex:2; font-family:var(--font-heading); font-size:12px;">
+      <button class="btn btn-outline btn-sm btn-del-ws-env" style="color:var(--color-danger); border-color:rgba(239,68,68,0.35); padding:2px 8px;">&times;</button>
+    `;
+    row.querySelector(".btn-del-ws-env").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function saveWorkspaceConfig() {
+    const pkgName = document.getElementById("wsConfigPkgName").value.trim();
+    if (!pkgName) return;
+
+    const timeout = parseInt(document.getElementById("wsConfigTimeout").value, 10) || 30;
+    const desc = document.getElementById("wsConfigDesc").value.trim();
+
+    const envMap = {};
+    document.querySelectorAll(".ws-env-row").forEach(r => {
+      const k = r.querySelector(".ws-env-key").value.trim();
+      const v = r.querySelector(".ws-env-val").value;
+      if (k) envMap[k] = v;
+    });
+
+    const payload = {
+      package: pkgName,
+      timeout_seconds: timeout,
+      description: desc,
+      env: envMap
+    };
+
+    try {
+      const res = await fetch("/api/workspace/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        document.getElementById("modalWorkspaceConfig").classList.remove("open");
+        alert(window.I18n.t("saved_successfully") || "Workspace configuration saved.");
+        await loadFunctions();
+      } else {
+        const err = await res.json();
+        alert("Failed saving config: " + (err.error || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+    }
   }
 })();

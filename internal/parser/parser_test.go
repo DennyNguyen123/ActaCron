@@ -64,3 +64,20 @@ function main() {
 	}
 }
 
+func TestParse_Timeout(t *testing.T) {
+	code := `/**
+ * @name data_sync
+ * @timeout 90
+ * @description Syncs large datasets with extended timeout
+ */
+function main(params) {
+    return { ok: true };
+}`
+	meta, err := parser.Parse(code, "sync.js")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.TimeoutSeconds != 90 {
+		t.Errorf("expected TimeoutSeconds=90, got %d", meta.TimeoutSeconds)
+	}
+}

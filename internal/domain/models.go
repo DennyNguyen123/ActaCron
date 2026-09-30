@@ -18,8 +18,15 @@ type FunctionMeta struct {
 	IsMCP       bool          `json:"is_mcp"`
 	AllowExec   bool          `json:"allow_exec"`
 	Params      []ParamSchema `json:"params"`
-	IsEnabled   bool          `json:"is_enabled"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
+	IsEnabled      bool          `json:"is_enabled"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+type WorkspaceConfig struct {
+	Name           string `json:"name,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	Description    string `json:"description,omitempty"`
 }
 
 type ExecutionLog struct {

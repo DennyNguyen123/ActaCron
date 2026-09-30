@@ -125,3 +125,74 @@ func TestSaveAndDeleteFunction(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEnvOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_env.db")
+	db, _ := storage.New(dbFile)
+	defer db.Close()
+
+	os.Setenv("GLOBAL_ONLY", "world")
+	os.Setenv("API_KEY", "global_secret")
+	defer os.Unsetenv("GLOBAL_ONLY")
+	defer os.Unsetenv("API_KEY")
+
+	runner := engine.New(db, 5, false)
+	mgr := manager.New(tmpDir, runner, db)
+
+	pkgPath := filepath.Join(tmpDir, "myPkg")
+	os.MkdirAll(pkgPath, 0755)
+
+	// Workspace .env
+	os.WriteFile(filepath.Join(pkgPath, ".env"), []byte("API_KEY=workspace_secret\nLOCAL_ONLY=hello\n"), 0644)
+
+	// Workspace script
+	os.WriteFile(filepath.Join(pkgPath, "check_env.js"), []byte(`
+		function main() {
+			return {
+				apiKey: env("API_KEY"),
+				localOnly: env("LOCAL_ONLY"),
+				globalOnly: env("GLOBAL_ONLY"),
+				allVars: env.all ? env.all() : null
+			};
+		}
+	`), 0644)
+
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	res, err := mgr.Call(ctx, "myPkg/check_env", nil)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+
+	resMap, ok := res.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T: %v", res, res)
+	}
+
+	if resMap["apiKey"] != "workspace_secret" {
+		t.Errorf("expected apiKey=workspace_secret, got %v", resMap["apiKey"])
+	}
+	if resMap["localOnly"] != "hello" {
+		t.Errorf("expected localOnly=hello, got %v", resMap["localOnly"])
+	}
+	if resMap["globalOnly"] != "world" {
+		t.Errorf("expected globalOnly=world, got %v", resMap["globalOnly"])
+	}
+	var apiKeyVal string
+	if mStr, ok := resMap["allVars"].(map[string]string); ok {
+		apiKeyVal = mStr["API_KEY"]
+	} else if mAny, ok := resMap["allVars"].(map[string]interface{}); ok {
+		apiKeyVal, _ = mAny["API_KEY"].(string)
+	} else {
+		t.Fatalf("unexpected type for allVars: %T", resMap["allVars"])
+	}
+	if apiKeyVal != "workspace_secret" {
+		t.Errorf("expected allVars[API_KEY]=workspace_secret, got %q", apiKeyVal)
+	}
+}
+

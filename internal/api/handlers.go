@@ -352,7 +352,12 @@ func (h *APIHandler) handleRunFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	timeout := 35 * time.Second
+	if fn := h.mgr.GetFunction(req.Key); fn != nil {
+		timeout = h.mgr.GetEffectiveTimeout(fn.Package, fn.Name)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -519,4 +524,93 @@ func (h *APIHandler) handleMCPTools(w http.ResponseWriter, r *http.Request) {
 		"tools":         mcpFuncs,
 		"claude_config": claudeConfig,
 	})
+}
+
+func (h *APIHandler) handleWorkspaceConfig(w http.ResponseWriter, r *http.Request) {
+	if h.mgr == nil {
+		writeError(w, http.StatusInternalServerError, "manager not initialized")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		pkgName := r.URL.Query().Get("package")
+		if pkgName == "" {
+			writeError(w, http.StatusBadRequest, "package query parameter is required")
+			return
+		}
+		pkgName = filepath.Base(pkgName)
+
+		wsCfg := h.mgr.GetWorkspaceConfig(pkgName)
+		wsEnv := h.mgr.GetWorkspaceEnv(pkgName)
+
+		res := map[string]interface{}{
+			"package":         pkgName,
+			"timeout_seconds": wsCfg.TimeoutSeconds,
+			"description":     wsCfg.Description,
+			"env":             wsEnv,
+		}
+		writeJSON(w, http.StatusOK, res)
+
+	case http.MethodPost:
+		var req struct {
+			Package        string            `json:"package"`
+			TimeoutSeconds int               `json:"timeout_seconds"`
+			Description    string            `json:"description"`
+			Env            map[string]string `json:"env"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if req.Package == "" {
+			writeError(w, http.StatusBadRequest, "package is required")
+			return
+		}
+		pkgName := filepath.Base(req.Package)
+		pkgPath := filepath.Join(h.mgr.PackagesDir(), pkgName)
+
+		if err := os.MkdirAll(pkgPath, 0755); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create package directory: "+err.Error())
+			return
+		}
+
+		// 1. Save workspace.json
+		wsCfg := domain.WorkspaceConfig{
+			Name:           pkgName,
+			TimeoutSeconds: req.TimeoutSeconds,
+			Description:    req.Description,
+		}
+		cfgData, err := json.MarshalIndent(wsCfg, "", "  ")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed serializing workspace config: "+err.Error())
+			return
+		}
+		if err := os.WriteFile(filepath.Join(pkgPath, "workspace.json"), cfgData, 0644); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed writing workspace.json: "+err.Error())
+			return
+		}
+
+		// 2. Save .env
+		if req.Env != nil {
+			if err := settings.WriteEnv(filepath.Join(pkgPath, ".env"), req.Env); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed writing workspace .env: "+err.Error())
+				return
+			}
+		}
+
+		// 3. Reload manager and reschedule
+		if err := h.mgr.Reload(); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed reloading packages: "+err.Error())
+			return
+		}
+		if h.sched != nil {
+			h.sched.Reschedule()
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }

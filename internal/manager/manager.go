@@ -13,6 +13,7 @@ import (
 	"actacron/internal/domain"
 	"actacron/internal/engine"
 	"actacron/internal/parser"
+	"actacron/internal/settings"
 	"actacron/internal/storage"
 	"github.com/dop251/goja"
 	"github.com/fsnotify/fsnotify"
@@ -24,26 +25,31 @@ type depthKeyType struct{}
 var depthKey = depthKeyType{}
 
 type Manager struct {
-	packagesDir string
-	runner      *engine.Runner
-	db          *storage.DB
-	mu          sync.RWMutex
-	packages    map[string]*domain.PackageInfo
-	functions   map[string]*domain.FunctionMeta // key: "pkg/func"
-	fileCode    map[string]string               // key: "pkg/func" -> code
-	watcher     *fsnotify.Watcher
-	stopChan    chan struct{}
+	packagesDir      string
+	runner           *engine.Runner
+	db               *storage.DB
+	mu               sync.RWMutex
+	packages         map[string]*domain.PackageInfo
+	functions        map[string]*domain.FunctionMeta // key: "pkg/func"
+	fileCode         map[string]string               // key: "pkg/func" -> code
+	workspaceConfigs map[string]*domain.WorkspaceConfig
+	workspaceEnvs    map[string]map[string]string
+	globalEnvPath    string
+	watcher          *fsnotify.Watcher
+	stopChan         chan struct{}
 }
 
 func New(packagesDir string, runner *engine.Runner, db *storage.DB) *Manager {
 	return &Manager{
-		packagesDir: packagesDir,
-		runner:      runner,
-		db:          db,
-		packages:    make(map[string]*domain.PackageInfo),
-		functions:   make(map[string]*domain.FunctionMeta),
-		fileCode:    make(map[string]string),
-		stopChan:    make(chan struct{}),
+		packagesDir:      packagesDir,
+		runner:           runner,
+		db:               db,
+		packages:         make(map[string]*domain.PackageInfo),
+		functions:        make(map[string]*domain.FunctionMeta),
+		fileCode:         make(map[string]string),
+		workspaceConfigs: make(map[string]*domain.WorkspaceConfig),
+		workspaceEnvs:    make(map[string]map[string]string),
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -59,6 +65,9 @@ func (m *Manager) Reload() error {
 		return err
 	}
 
+	// Auto-scaffold _shared library if not present
+	_ = ScaffoldSharedLibrary(filepath.Join(m.packagesDir, "_shared"))
+
 	entries, err := os.ReadDir(m.packagesDir)
 	if err != nil {
 		return err
@@ -67,6 +76,8 @@ func (m *Manager) Reload() error {
 	newPackages := make(map[string]*domain.PackageInfo)
 	newFunctions := make(map[string]*domain.FunctionMeta)
 	newFileCode := make(map[string]string)
+	newWorkspaceConfigs := make(map[string]*domain.WorkspaceConfig)
+	newWorkspaceEnvs := make(map[string]map[string]string)
 
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
@@ -78,6 +89,59 @@ func (m *Manager) Reload() error {
 		isGit := false
 		if _, err := os.Stat(filepath.Join(pkgPath, ".git")); err == nil {
 			isGit = true
+		}
+
+		if pkgName == "_shared" {
+			pkgInfo := &domain.PackageInfo{
+				Name:      "_shared",
+				Path:      pkgPath,
+				IsGit:     isGit,
+				Status:    "clean",
+				Functions: []string{},
+				UpdatedAt: time.Now(),
+			}
+			files, err := os.ReadDir(pkgPath)
+			if err == nil {
+				for _, file := range files {
+					if file.IsDir() || filepath.Ext(file.Name()) != ".js" {
+						continue
+					}
+					filePath := filepath.Join(pkgPath, file.Name())
+					codeBytes, err := os.ReadFile(filePath)
+					if err != nil {
+						continue
+					}
+					code := string(codeBytes)
+					baseFileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+					fullKey := "_shared/" + baseFileName
+					newFunctions[fullKey] = &domain.FunctionMeta{
+						Name:        baseFileName,
+						Package:     "_shared",
+						FilePath:    file.Name(),
+						Description: "Shared Library Module",
+						IsEnabled:   false,
+						UpdatedAt:   time.Now(),
+					}
+					newFileCode[fullKey] = code
+					pkgInfo.Functions = append(pkgInfo.Functions, baseFileName)
+				}
+			}
+			newPackages["_shared"] = pkgInfo
+			continue
+		}
+
+		// 1. Read workspace.json if present
+		wsCfgPath := filepath.Join(pkgPath, "workspace.json")
+		wsCfg := &domain.WorkspaceConfig{Name: pkgName}
+		if wsData, err := os.ReadFile(wsCfgPath); err == nil {
+			_ = json.Unmarshal(wsData, wsCfg)
+		}
+		newWorkspaceConfigs[pkgName] = wsCfg
+
+		// 2. Read workspace .env if present
+		wsEnvPath := filepath.Join(pkgPath, ".env")
+		if envMap, err := settings.ReadEnv(wsEnvPath); err == nil && len(envMap) > 0 {
+			newWorkspaceEnvs[pkgName] = envMap
 		}
 
 		pkgInfo := &domain.PackageInfo{
@@ -137,6 +201,8 @@ func (m *Manager) Reload() error {
 	m.packages = newPackages
 	m.functions = newFunctions
 	m.fileCode = newFileCode
+	m.workspaceConfigs = newWorkspaceConfigs
+	m.workspaceEnvs = newWorkspaceEnvs
 	return nil
 }
 
@@ -258,6 +324,12 @@ func (m *Manager) callWithTrigger(ctx context.Context, target string, params int
 	}
 
 	newCtx := context.WithValue(ctx, depthKey, depth+1)
+	if _, hasDeadline := newCtx.Deadline(); !hasDeadline {
+		timeout := m.GetEffectiveTimeout(fn.Package, fn.Name)
+		var cancel context.CancelFunc
+		newCtx, cancel = context.WithTimeout(newCtx, timeout)
+		defer cancel()
+	}
 	execID := uuid.New().String()
 
 	// Inject `call` and `require` into runtime
@@ -280,38 +352,133 @@ func (m *Manager) callWithTrigger(ctx context.Context, target string, params int
 			return vm.ToValue(innerRes)
 		})
 
-		// 2. Internal package require API
-		vm.Set("require", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) == 0 {
-				panic(vm.ToValue("require() requires a path argument"))
-			}
-			relPath := call.Arguments[0].String()
-			pkgPath := filepath.Join(m.packagesDir, fn.Package)
+		// 2. Internal package & _shared require API
+		currentDir := filepath.Join(m.packagesDir, fn.Package)
 
-			resolvedPath := filepath.Clean(filepath.Join(pkgPath, relPath))
-			if !strings.HasPrefix(resolvedPath, filepath.Clean(pkgPath)) {
-				panic(vm.ToValue("security error: path traversal outside package not permitted"))
+		var executeRequire func(resolvedPath, scriptName string) (goja.Value, error)
+		executeRequire = func(resolvedPath, scriptName string) (goja.Value, error) {
+			cleanPackagesDir := filepath.Clean(m.packagesDir)
+			if !strings.HasPrefix(resolvedPath, cleanPackagesDir+string(filepath.Separator)) && resolvedPath != cleanPackagesDir {
+				return nil, fmt.Errorf("security error: path traversal outside packages not permitted")
 			}
 
 			reqCode, reqErr := os.ReadFile(resolvedPath)
 			if reqErr != nil {
-				panic(vm.ToValue(fmt.Sprintf("cannot read required file %s: %v", relPath, reqErr)))
+				return nil, fmt.Errorf("cannot read required file %s: %v", scriptName, reqErr)
 			}
 
-			// Run in module scope
+			oldDir := currentDir
+			currentDir = filepath.Dir(resolvedPath)
+			defer func() { currentDir = oldDir }()
+
 			moduleObj := vm.NewObject()
 			exportsObj := vm.NewObject()
 			moduleObj.Set("exports", exportsObj)
+
+			prevModule := vm.Get("module")
+			prevExports := vm.Get("exports")
+
 			vm.Set("module", moduleObj)
 			vm.Set("exports", exportsObj)
 
-			_, reqExecErr := vm.RunScript(relPath, string(reqCode))
-			if reqExecErr != nil {
-				panic(vm.ToValue(fmt.Sprintf("error executing %s: %v", relPath, reqExecErr)))
+			_, reqExecErr := vm.RunScript(scriptName, string(reqCode))
+
+			if prevModule != nil {
+				vm.Set("module", prevModule)
+			}
+			if prevExports != nil {
+				vm.Set("exports", prevExports)
 			}
 
-			return moduleObj.Get("exports")
+			if reqExecErr != nil {
+				return nil, fmt.Errorf("error executing %s: %v", scriptName, reqExecErr)
+			}
+
+			return moduleObj.Get("exports"), nil
+		}
+
+		resolveRequirePath := func(rawPath string) (string, error) {
+			var resolvedPath string
+			if rawPath == "_shared" || strings.HasPrefix(rawPath, "_shared/") || strings.HasPrefix(rawPath, "../_shared") {
+				sub := rawPath
+				if strings.HasPrefix(sub, "../_shared") {
+					sub = strings.TrimPrefix(sub, "../_shared")
+					sub = strings.TrimPrefix(sub, "/")
+				} else {
+					sub = strings.TrimPrefix(sub, "_shared/")
+					if sub == "_shared" {
+						sub = ""
+					}
+				}
+				if sub == "" {
+					sub = "index.js"
+				}
+				if !strings.HasSuffix(sub, ".js") {
+					sub += ".js"
+				}
+				resolvedPath = filepath.Clean(filepath.Join(m.packagesDir, "_shared", sub))
+			} else {
+				sub := rawPath
+				if !strings.HasSuffix(sub, ".js") {
+					targetDir := filepath.Join(currentDir, sub)
+					if stat, err := os.Stat(targetDir); err == nil && stat.IsDir() {
+						sub = filepath.Join(sub, "index.js")
+					} else {
+						sub += ".js"
+					}
+				}
+				resolvedPath = filepath.Clean(filepath.Join(currentDir, sub))
+			}
+			return resolvedPath, nil
+		}
+
+		vm.Set("require", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(vm.ToValue("require() requires a path argument"))
+			}
+			rawPath := call.Arguments[0].String()
+			resolvedPath, err := resolveRequirePath(rawPath)
+			if err != nil {
+				panic(vm.ToValue(err.Error()))
+			}
+
+			exports, err := executeRequire(resolvedPath, rawPath)
+			if err != nil {
+				panic(vm.ToValue(err.Error()))
+			}
+			return exports
 		})
+
+		// 3. Scoped environment variables
+		resolver, allVars := m.getMergedEnv(fn.Package)
+		engine.RegisterEnv(vm, resolver, allVars)
+
+		// 4. Inject global shared object
+		sharedObj := vm.NewObject()
+		sharedDir := filepath.Join(m.packagesDir, "_shared")
+		indexFile := filepath.Join(sharedDir, "index.js")
+		if _, err := os.Stat(indexFile); err == nil {
+			if idxVal, err := executeRequire(indexFile, "_shared/index.js"); err == nil && idxVal != nil {
+				if idxObj, ok := idxVal.(*goja.Object); ok {
+					for _, k := range idxObj.Keys() {
+						sharedObj.Set(k, idxObj.Get(k))
+					}
+				}
+			}
+		} else {
+			if entries, err := os.ReadDir(sharedDir); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+						base := strings.TrimSuffix(e.Name(), ".js")
+						fullP := filepath.Join(sharedDir, e.Name())
+						if modVal, err := executeRequire(fullP, "_shared/"+e.Name()); err == nil && modVal != nil {
+							sharedObj.Set(base, modVal)
+						}
+					}
+				}
+			}
+		}
+		vm.Set("shared", sharedObj)
 	}
 
 	res, execErr := m.runner.ExecuteWithSetup(newCtx, fn.Package, fn.FilePath, code, params, setupFn)
@@ -401,5 +568,109 @@ func (m *Manager) DeleteFunction(pkgName, funcFileName string) error {
 	}
 
 	return m.Reload()
+}
+
+func (m *Manager) GetWorkspaceConfig(pkgName string) *domain.WorkspaceConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if cfg, ok := m.workspaceConfigs[pkgName]; ok {
+		return cfg
+	}
+	return &domain.WorkspaceConfig{Name: pkgName}
+}
+
+func (m *Manager) GetEffectiveTimeout(pkgName, funcName string) time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// 1. Check Function JSDoc @timeout
+	fullKey := pkgName + "/" + funcName
+	if fn, ok := m.functions[fullKey]; ok && fn != nil && fn.TimeoutSeconds > 0 {
+		return time.Duration(fn.TimeoutSeconds) * time.Second
+	}
+	for _, fn := range m.functions {
+		if fn != nil && fn.Package == pkgName && fn.Name == funcName && fn.TimeoutSeconds > 0 {
+			return time.Duration(fn.TimeoutSeconds) * time.Second
+		}
+	}
+
+	// 2. Check WorkspaceConfig timeout
+	if wsCfg, ok := m.workspaceConfigs[pkgName]; ok && wsCfg != nil && wsCfg.TimeoutSeconds > 0 {
+		return time.Duration(wsCfg.TimeoutSeconds) * time.Second
+	}
+
+	// 3. Fallback to Runner Default Timeout
+	if m.runner != nil {
+		sec := m.runner.DefaultTimeoutSec()
+		if sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+
+	return 30 * time.Second
+}
+
+func (m *Manager) GetWorkspaceEnv(pkgName string) map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if envMap, ok := m.workspaceEnvs[pkgName]; ok {
+		res := make(map[string]string, len(envMap))
+		for k, v := range envMap {
+			res[k] = v
+		}
+		return res
+	}
+	return make(map[string]string)
+}
+
+func (m *Manager) SetGlobalEnvPath(path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.globalEnvPath = path
+}
+
+func (m *Manager) getMergedEnv(pkgName string) (func(string) string, map[string]string) {
+	m.mu.RLock()
+	wsEnv := m.workspaceEnvs[pkgName]
+	globalPath := m.globalEnvPath
+	if globalPath == "" {
+		globalPath = filepath.Join(filepath.Dir(m.packagesDir), ".env")
+	}
+	m.mu.RUnlock()
+
+	globalEnv, _ := settings.ReadEnv(globalPath)
+
+	allVars := make(map[string]string)
+	// 1. OS env
+	for _, e := range os.Environ() {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			allVars[parts[0]] = parts[1]
+		}
+	}
+	// 2. Global env overrides OS env
+	for k, v := range globalEnv {
+		allVars[k] = v
+	}
+	// 3. Workspace env overrides Global env
+	for k, v := range wsEnv {
+		allVars[k] = v
+	}
+
+	resolver := func(key string) string {
+		if wsEnv != nil {
+			if val, ok := wsEnv[key]; ok {
+				return val
+			}
+		}
+		if globalEnv != nil {
+			if val, ok := globalEnv[key]; ok {
+				return val
+			}
+		}
+		return os.Getenv(key)
+	}
+
+	return resolver, allVars
 }
 
