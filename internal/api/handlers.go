@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -18,15 +19,18 @@ import (
 	"actacron/internal/settings"
 	"actacron/internal/storage"
 	"actacron/internal/tray"
+	"actacron/internal/updater"
+	"actacron/internal/version"
 )
 
 type APIHandler struct {
-	mgr         *manager.Manager
-	sched       *scheduler.Scheduler
-	db          *storage.DB
-	gitSvc      *gitmgr.GitService
-	settingsSvc *settings.Service
-	startTime   time.Time
+	mgr           *manager.Manager
+	sched         *scheduler.Scheduler
+	db            *storage.DB
+	gitSvc        *gitmgr.GitService
+	settingsSvc   *settings.Service
+	updaterClient *updater.Client
+	startTime     time.Time
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -627,4 +631,84 @@ func (h *APIHandler) handleWorkspaceConfig(w http.ResponseWriter, r *http.Reques
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *APIHandler) handleGetVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	info := version.GetInfo()
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *APIHandler) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	client := h.updaterClient
+	if client == nil {
+		client = updater.NewClient(nil)
+	}
+	info, err := client.CheckForUpdate("DennyNguyen123/ActaCron", version.Version)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to check for updates: %v", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *APIHandler) handleApplyUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		DownloadURL string `json:"download_url"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	client := h.updaterClient
+	if client == nil {
+		client = updater.NewClient(nil)
+	}
+
+	downloadURL := req.DownloadURL
+	if downloadURL == "" {
+		info, err := client.CheckForUpdate("DennyNguyen123/ActaCron", version.Version)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to check update: %v", err))
+			return
+		}
+		if !info.HasUpdate || info.AssetURL == "" {
+			writeError(w, http.StatusBadRequest, "no matching update asset found for current platform")
+			return
+		}
+		downloadURL = info.AssetURL
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to determine executable path: %v", err))
+		return
+	}
+
+	if err := client.ApplyUpdate(downloadURL, execPath); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to apply update: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "Update applied successfully. Restarting ActaCron...",
+	})
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		cmd := exec.Command(execPath, os.Args[1:]...)
+		_ = cmd.Start()
+		os.Exit(0)
+	}()
 }

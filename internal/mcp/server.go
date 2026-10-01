@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"actacron/internal/domain"
+	"actacron/internal/version"
 )
 
 type FunctionInvoker interface {
@@ -36,7 +37,7 @@ func (h *Handler) Handle(ctx context.Context, req JSONRPCRequest) JSONRPCRespons
 			},
 			ServerInfo: Implementation{
 				Name:    "ActaCron",
-				Version: "1.0.0",
+				Version: version.Version,
 			},
 		}
 		raw, _ := json.Marshal(res)

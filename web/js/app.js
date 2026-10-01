@@ -12,6 +12,7 @@
     initSettingsEvents();
     initModals();
     initResizers();
+    initUpdater();
 
     // Start background health polling
     pollHealth();
@@ -1526,6 +1527,157 @@ function main(params) {
         
         document.addEventListener("mousemove", onMouseMove);
         document.addEventListener("mouseup", onMouseUp);
+      });
+    }
+  }
+
+  // --- In-App Updater ---
+  function initUpdater() {
+    const badgeEl = document.getElementById("app-version-badge");
+    const settingsVerEl = document.getElementById("settingsCurrentVersion");
+    const settingsStatusEl = document.getElementById("settingsUpdateStatus");
+    const btnCheckSettings = document.getElementById("btnCheckUpdateSettings");
+
+    const modalUpdate = document.getElementById("modalUpdate");
+    const btnCloseUpdateModal = document.getElementById("btnCloseUpdateModal");
+    const btnCancelUpdateModal = document.getElementById("btnCancelUpdateModal");
+    const btnApplyUpdate = document.getElementById("btnApplyUpdate");
+    const modalUpdateVersion = document.getElementById("modalUpdateVersion");
+    const modalUpdateDate = document.getElementById("modalUpdateDate");
+    const modalUpdateNotes = document.getElementById("modalUpdateNotes");
+    const modalUpdateProgress = document.getElementById("modalUpdateProgressContainer");
+    const modalUpdateProgressStatus = document.getElementById("modalUpdateProgressStatus");
+
+    let currentReleaseInfo = null;
+
+    // Load initial version info
+    fetch("/api/version")
+      .then(res => res.json())
+      .then(info => {
+        if (info && info.version) {
+          const displayVer = info.version.startsWith("v") ? info.version : "v" + info.version;
+          if (badgeEl) badgeEl.textContent = displayVer;
+          if (settingsVerEl) settingsVerEl.textContent = displayVer;
+        }
+      })
+      .catch(() => {});
+
+    function closeUpdateModal() {
+      if (modalUpdate) modalUpdate.classList.remove("active");
+    }
+
+    if (btnCloseUpdateModal) btnCloseUpdateModal.addEventListener("click", closeUpdateModal);
+    if (btnCancelUpdateModal) btnCancelUpdateModal.addEventListener("click", closeUpdateModal);
+
+    async function checkForUpdates(manual = false) {
+      if (btnCheckSettings) {
+        btnCheckSettings.disabled = true;
+        btnCheckSettings.textContent = "Checking...";
+      }
+      if (settingsStatusEl) settingsStatusEl.textContent = "Checking GitHub Releases...";
+
+      try {
+        const res = await fetch("/api/update/check");
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const data = await res.json();
+        currentReleaseInfo = data;
+
+        if (data.has_update) {
+          if (settingsStatusEl) {
+            settingsStatusEl.innerHTML = `<span style="color:var(--color-accent); font-weight:600;">Update ${data.tag_name} available!</span>`;
+          }
+          if (modalUpdateVersion) modalUpdateVersion.textContent = `New Version: ${data.tag_name}`;
+          if (modalUpdateDate) {
+            const pubDate = data.published_at ? new Date(data.published_at).toLocaleDateString() : "";
+            modalUpdateDate.textContent = pubDate ? `Published: ${pubDate}` : "";
+          }
+          if (modalUpdateNotes) modalUpdateNotes.textContent = data.notes || "No release notes provided.";
+          if (modalUpdateProgress) modalUpdateProgress.style.display = "none";
+          if (btnApplyUpdate) {
+            btnApplyUpdate.disabled = false;
+            btnApplyUpdate.textContent = "Update & Restart";
+          }
+          if (modalUpdate) modalUpdate.classList.add("active");
+        } else {
+          if (settingsStatusEl) {
+            settingsStatusEl.textContent = `ActaCron is up to date (${data.current_version ? (data.current_version.startsWith('v') ? data.current_version : 'v' + data.current_version) : 'latest'}).`;
+          }
+          if (manual) {
+            alert(`You are running the latest version of ActaCron (${data.current_version}).`);
+          }
+        }
+      } catch (err) {
+        if (settingsStatusEl) settingsStatusEl.textContent = "Check failed: " + err.message;
+        if (manual) {
+          alert("Failed to check for updates: " + err.message);
+        }
+      } finally {
+        if (btnCheckSettings) {
+          btnCheckSettings.disabled = false;
+          btnCheckSettings.textContent = "Check for Updates";
+        }
+      }
+    }
+
+    if (badgeEl) {
+      badgeEl.addEventListener("click", () => checkForUpdates(true));
+    }
+    if (btnCheckSettings) {
+      btnCheckSettings.addEventListener("click", () => checkForUpdates(true));
+    }
+
+    if (btnApplyUpdate) {
+      btnApplyUpdate.addEventListener("click", async () => {
+        btnApplyUpdate.disabled = true;
+        btnApplyUpdate.textContent = "Applying...";
+        if (btnCancelUpdateModal) btnCancelUpdateModal.disabled = true;
+        if (btnCloseUpdateModal) btnCloseUpdateModal.disabled = true;
+        if (modalUpdateProgress) modalUpdateProgress.style.display = "block";
+        if (modalUpdateProgressStatus) modalUpdateProgressStatus.textContent = "Downloading & applying update...";
+
+        try {
+          const body = currentReleaseInfo && currentReleaseInfo.asset_url ? { download_url: currentReleaseInfo.asset_url } : {};
+          const res = await fetch("/api/update/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          const resData = await res.json();
+          if (!res.ok) {
+            throw new Error(resData.error || "Failed to apply update");
+          }
+
+          if (modalUpdateProgressStatus) {
+            modalUpdateProgressStatus.textContent = "Update applied! Restarting ActaCron...";
+          }
+
+          let attempts = 0;
+          const pollRestart = setInterval(async () => {
+            attempts++;
+            try {
+              const check = await fetch("/api/version");
+              if (check.ok) {
+                clearInterval(pollRestart);
+                window.location.reload();
+              }
+            } catch (e) {
+              if (attempts > 30) {
+                clearInterval(pollRestart);
+                alert("ActaCron is restarting. Please refresh the browser manually.");
+              }
+            }
+          }, 1000);
+
+        } catch (err) {
+          alert("Update failed: " + err.message);
+          btnApplyUpdate.disabled = false;
+          btnApplyUpdate.textContent = "Update & Restart";
+          if (btnCancelUpdateModal) btnCancelUpdateModal.disabled = false;
+          if (btnCloseUpdateModal) btnCloseUpdateModal.disabled = false;
+          if (modalUpdateProgress) modalUpdateProgress.style.display = "none";
+        }
       });
     }
   }

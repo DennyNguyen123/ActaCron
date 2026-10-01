@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows amd64 (GUI + Inno Setup Installer)
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            archive_ext: zip
+            build_installer: true
+
+          # Windows arm64
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+            archive_ext: zip
+            build_installer: false
+
+          # Linux amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            archive_ext: tar.gz
+            build_installer: false
+
+          # Linux arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            archive_ext: tar.gz
+            build_installer: false
+
+          # macOS amd64 (Intel)
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            archive_ext: tar.gz
+            build_installer: false
+
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            archive_ext: tar.gz
+            build_installer: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Run Tests
+        run: go test ./...
+
+      - name: Install Inno Setup
+        if: matrix.build_installer == true
+        shell: powershell
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress
+            echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+          }
+
+      - name: Build Binary (Windows)
+        if: matrix.goos == 'windows'
+        shell: powershell
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          $ver = "${{ github.ref_name }}"
+          $commit = "${{ github.sha }}"
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $flags = "-H windowsgui -s -w -X 'actacron/internal/version.Version=$ver' -X 'actacron/internal/version.GitCommit=$commit' -X 'actacron/internal/version.BuildDate=$date'"
+          $pkgDir = "dist/actacron-${ver}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          New-Item -ItemType Directory -Path "$pkgDir/packages/demo-pack" -Force | Out-Null
+          go build -ldflags "$flags" -o "$pkgDir/actacron.exe" .
+          Copy-Item ".env.example" "$pkgDir/.env.example"
+          Copy-Item "README.md" "$pkgDir/README.md" -ErrorAction SilentlyContinue
+          Copy-Item -Recurse "packages/demo-pack/*" "$pkgDir/packages/demo-pack/"
+          Compress-Archive -Path "$pkgDir" -DestinationPath "dist/actacron-${ver}-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+
+      - name: Build Inno Setup Installer (Windows amd64)
+        if: matrix.build_installer == true
+        shell: powershell
+        run: |
+          $ver = "${{ github.ref_name }}"
+          # Mirror the layout expected by installer.iss
+          $stagingDir = "dist/ActaCron-${ver}-windows-amd64"
+          Copy-Item -Recurse -Force "dist/actacron-${ver}-windows-amd64" $stagingDir
+          iscc scripts/installer.iss "/DMyAppVersion=$ver"
+
+      - name: Build Binary (Unix)
+        if: matrix.goos != 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          VER="${{ github.ref_name }}"
+          COMMIT="${{ github.sha }}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          FLAGS="-s -w -X 'actacron/internal/version.Version=$VER' -X 'actacron/internal/version.GitCommit=$COMMIT' -X 'actacron/internal/version.BuildDate=$DATE'"
+          PKG_DIR="dist/actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "$PKG_DIR/packages/demo-pack"
+          go build -ldflags "$FLAGS" -o "$PKG_DIR/actacron" .
+          cp .env.example "$PKG_DIR/.env.example"
+          cp README.md "$PKG_DIR/README.md" || true
+          cp -r packages/demo-pack/* "$PKG_DIR/packages/demo-pack/" || true
+          tar -czvf "dist/actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" -C dist "actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.exe
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate Checksums
+        working-directory: release-assets
+        run: |
+          sha256sum * > checksums-sha256.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true

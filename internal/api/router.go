@@ -54,6 +54,9 @@ func NewRouter(
 	mux.HandleFunc("/api/settings", handler.handleSettings)
 	mux.HandleFunc("/api/env", handler.handleEnv)
 	mux.HandleFunc("/api/mcp/tools", handler.handleMCPTools)
+	mux.HandleFunc("/api/version", handler.handleGetVersion)
+	mux.HandleFunc("/api/update/check", handler.handleCheckUpdate)
+	mux.HandleFunc("/api/update/apply", handler.handleApplyUpdate)
 
 	// MCP SSE endpoints
 	if mgr != nil {

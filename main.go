@@ -21,16 +21,21 @@ import (
 	"actacron/internal/settings"
 	"actacron/internal/storage"
 	"actacron/internal/tray"
+	"actacron/internal/version"
 	"actacron/web"
 )
 
 func main() {
+	log.Printf("Starting ActaCron %s (%s, %s)", version.Version, version.GitCommit, version.BuildDate)
+
 	// Base directories: if running under 'go run' (temp go-build), use current working directory
 	cwd, _ := os.Getwd()
 	execDir, err := os.Executable()
 	var appDir string
 	if err == nil && !strings.Contains(execDir, "go-build") {
 		appDir = filepath.Dir(execDir)
+		// Silently cleanup any .old binary leftover from self-update
+		_ = os.Remove(execDir + ".old")
 	} else {
 		appDir = cwd
 	}

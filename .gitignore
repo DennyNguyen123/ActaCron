@@ -5,6 +5,8 @@
 *.so
 *.dylib
 dist/
+*.db
+*.db-journal
 data/*.db
 data/*.db-journal
 

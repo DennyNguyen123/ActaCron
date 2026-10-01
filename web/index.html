@@ -17,7 +17,7 @@
         </svg>
         <span data-i18n="app_title">ActaCron</span>
       </div>
-      <span class="brand-badge">v1.0.0</span>
+      <span class="brand-badge" id="app-version-badge" title="Click to check for updates" style="cursor:pointer;">v1.0.0</span>
     </div>
 
     <div class="header-status-group">
@@ -395,6 +395,19 @@
                 </label>
               </div>
 
+              <hr style="border:none; border-top:1px solid var(--color-border); margin:var(--space-md) 0;">
+
+              <div class="form-group">
+                <label style="font-weight:600;">Application Updates</label>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:12px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:6px;">
+                  <div>
+                    <div style="font-weight:500;">Version: <span id="settingsCurrentVersion" style="color:var(--color-accent); font-family:var(--font-mono);">--</span></div>
+                    <div class="form-help" id="settingsUpdateStatus">Check for the latest release on GitHub.</div>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnCheckUpdateSettings">Check for Updates</button>
+                </div>
+              </div>
+
               <button class="btn btn-primary" id="btnSaveGeneral" data-i18n="save_general">Save General Settings</button>
             </div>
 
@@ -607,6 +620,35 @@
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" id="btnCancelWsConfig" data-i18n="close">Close</button>
         <button class="btn btn-primary btn-sm" id="btnSaveWsConfig">Save Configuration</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal In-App Update -->
+  <div class="modal-overlay" id="modalUpdate">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <span id="modalUpdateTitle">Software Update</span>
+        <button class="btn btn-outline btn-sm" id="btnCloseUpdateModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalUpdateBadge" style="display:inline-block; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600; background:rgba(16, 185, 129, 0.15); color:var(--color-accent); margin-bottom:12px;">Update Available</div>
+        <h3 id="modalUpdateVersion" style="margin:0 0 8px 0; font-family:var(--font-heading); font-size:16px;">New Version Available</h3>
+        <p class="form-help" id="modalUpdateDate" style="margin-bottom:12px;"></p>
+        <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--color-muted-foreground);">Release Notes:</div>
+        <div class="snippet-box" id="modalUpdateNotes" style="max-height:180px; overflow-y:auto; white-space:pre-wrap; font-family:var(--font-sans); font-size:13px; margin-bottom:14px;"></div>
+        <div id="modalUpdateProgressContainer" style="display:none; margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+            <span id="modalUpdateProgressStatus">Downloading update...</span>
+          </div>
+          <div style="height:6px; background:var(--color-surface); border-radius:3px; overflow:hidden;">
+            <div id="modalUpdateProgressBar" style="height:100%; width:100%; background:var(--color-accent); animation: pulse 1.5s infinite;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btnCancelUpdateModal" data-i18n="close">Close</button>
+        <button class="btn btn-primary btn-sm" id="btnApplyUpdate">Update & Restart</button>
       </div>
     </div>
   </div>
