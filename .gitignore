@@ -23,5 +23,6 @@ Thumbs.db
 actacron.db
 
 # Runtime directories & env
-packages/
+packages/*
+!packages/demo-pack/
 .env

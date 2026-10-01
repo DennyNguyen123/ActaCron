@@ -93,11 +93,14 @@ jobs:
           $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $flags = "-H windowsgui -s -w -X 'actacron/internal/version.Version=$ver' -X 'actacron/internal/version.GitCommit=$commit' -X 'actacron/internal/version.BuildDate=$date'"
           $pkgDir = "dist/actacron-${ver}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          New-Item -ItemType Directory -Path "$pkgDir/packages/demo-pack" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$pkgDir/packages" -Force | Out-Null
           go build -ldflags "$flags" -o "$pkgDir/actacron.exe" .
           Copy-Item ".env.example" "$pkgDir/.env.example"
           Copy-Item "README.md" "$pkgDir/README.md" -ErrorAction SilentlyContinue
-          Copy-Item -Recurse "packages/demo-pack/*" "$pkgDir/packages/demo-pack/"
+          if (Test-Path "packages/demo-pack") {
+            New-Item -ItemType Directory -Path "$pkgDir/packages/demo-pack" -Force | Out-Null
+            Copy-Item -Recurse "packages/demo-pack/*" "$pkgDir/packages/demo-pack/" -ErrorAction SilentlyContinue
+          }
           Compress-Archive -Path "$pkgDir" -DestinationPath "dist/actacron-${ver}-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
 
       - name: Build Inno Setup Installer (Windows amd64)
@@ -122,11 +125,14 @@ jobs:
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           FLAGS="-s -w -X 'actacron/internal/version.Version=$VER' -X 'actacron/internal/version.GitCommit=$COMMIT' -X 'actacron/internal/version.BuildDate=$DATE'"
           PKG_DIR="dist/actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p "$PKG_DIR/packages/demo-pack"
+          mkdir -p "$PKG_DIR/packages"
           go build -ldflags "$FLAGS" -o "$PKG_DIR/actacron" .
           cp .env.example "$PKG_DIR/.env.example"
           cp README.md "$PKG_DIR/README.md" || true
-          cp -r packages/demo-pack/* "$PKG_DIR/packages/demo-pack/" || true
+          if [ -d "packages/demo-pack" ]; then
+            mkdir -p "$PKG_DIR/packages/demo-pack"
+            cp -r packages/demo-pack/* "$PKG_DIR/packages/demo-pack/" 2>/dev/null || true
+          fi
           tar -czvf "dist/actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" -C dist "actacron-${VER}-${{ matrix.goos }}-${{ matrix.goarch }}"
 
       - name: Upload Artifacts

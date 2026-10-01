@@ -25,11 +25,14 @@ UninstallDisplayIcon={app}\actacron.exe
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "autostart"; Description: "Start ActaCron automatically when Windows starts"; GroupDescription: "Startup:"; Flags: unchecked
 
+[Dirs]
+Name: "{app}\packages"; Flags: uninsneveruninstall
+
 [Files]
 Source: "..\dist\ActaCron-{#MyAppVersion}-windows-amd64\actacron.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ActaCron-{#MyAppVersion}-windows-amd64\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ActaCron-{#MyAppVersion}-windows-amd64\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
-Source: "..\dist\ActaCron-{#MyAppVersion}-windows-amd64\packages\demo-pack\*"; DestDir: "{app}\packages\demo-pack"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
+Source: "..\dist\ActaCron-{#MyAppVersion}-windows-amd64\packages\*"; DestDir: "{app}\packages"; Flags: skipifsourcedoesntexist onlyifdoesntexist recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\ActaCron"; Filename: "{app}\actacron.exe"

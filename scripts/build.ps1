@@ -16,7 +16,7 @@ $BuildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 # Clean dist
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist/ActaCron-${Version}-windows-amd64"
 New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64" -Force | Out-Null
-New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack" -Force | Out-Null
+New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64/packages" -Force | Out-Null
 
 $ldflags = "-H windowsgui -s -w -X 'actacron/internal/version.Version=$Version' -X 'actacron/internal/version.GitCommit=$Commit' -X 'actacron/internal/version.BuildDate=$BuildDate'"
 
@@ -28,7 +28,10 @@ go build -ldflags "$ldflags" -o "dist/ActaCron-${Version}-windows-amd64/actacron
 # Copy documentation and sample files
 Copy-Item ".env.example" "dist/ActaCron-${Version}-windows-amd64/.env.example"
 Copy-Item "README.md" "dist/ActaCron-${Version}-windows-amd64/README.md" -ErrorAction SilentlyContinue
-Copy-Item -Recurse "packages/demo-pack/*" "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack/"
+if (Test-Path "packages/demo-pack") {
+    New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack" -Force | Out-Null
+    Copy-Item -Recurse "packages/demo-pack/*" "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack/" -ErrorAction SilentlyContinue
+}
 
 # Compress into portable zip
 Write-Host "Compressing portable release ZIP..." -ForegroundColor Yellow
