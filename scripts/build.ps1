@@ -14,30 +14,30 @@ try {
 $BuildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 # Clean dist
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist/ActaCron-${Version}-windows-amd64"
-New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64" -Force | Out-Null
-New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64/packages" -Force | Out-Null
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist/actacron-${Version}-windows-amd64"
+New-Item -ItemType Directory -Path "dist/actacron-${Version}-windows-amd64" -Force | Out-Null
+New-Item -ItemType Directory -Path "dist/actacron-${Version}-windows-amd64/packages" -Force | Out-Null
 
 $ldflags = "-H windowsgui -s -w -X 'actacron/internal/version.Version=$Version' -X 'actacron/internal/version.GitCommit=$Commit' -X 'actacron/internal/version.BuildDate=$BuildDate'"
 
 # Compile with GUI flag (no black console window) and stripped symbols
 Write-Host "Compiling Go binary..." -ForegroundColor Yellow
 $env:CGO_ENABLED = "0"
-go build -ldflags "$ldflags" -o "dist/ActaCron-${Version}-windows-amd64/actacron.exe" .
+go build -ldflags "$ldflags" -o "dist/actacron-${Version}-windows-amd64/actacron.exe" .
 
 # Copy documentation and sample files
-Copy-Item ".env.example" "dist/ActaCron-${Version}-windows-amd64/.env.example"
-Copy-Item "README.md" "dist/ActaCron-${Version}-windows-amd64/README.md" -ErrorAction SilentlyContinue
+Copy-Item ".env.example" "dist/actacron-${Version}-windows-amd64/.env.example"
+Copy-Item "README.md" "dist/actacron-${Version}-windows-amd64/README.md" -ErrorAction SilentlyContinue
 if (Test-Path "packages/demo-pack") {
-    New-Item -ItemType Directory -Path "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack" -Force | Out-Null
-    Copy-Item -Recurse "packages/demo-pack/*" "dist/ActaCron-${Version}-windows-amd64/packages/demo-pack/" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path "dist/actacron-${Version}-windows-amd64/packages/demo-pack" -Force | Out-Null
+    Copy-Item -Recurse "packages/demo-pack/*" "dist/actacron-${Version}-windows-amd64/packages/demo-pack/" -ErrorAction SilentlyContinue
 }
 
 # Compress into portable zip
 Write-Host "Compressing portable release ZIP..." -ForegroundColor Yellow
-$zipPath = "dist/ActaCron-${Version}-windows-amd64.zip"
+$zipPath = "dist/actacron-${Version}-windows-amd64.zip"
 Remove-Item -Force -ErrorAction SilentlyContinue $zipPath
-Compress-Archive -Path "dist/ActaCron-${Version}-windows-amd64" -DestinationPath $zipPath
+Compress-Archive -Path "dist/actacron-${Version}-windows-amd64" -DestinationPath $zipPath
 
 Write-Host "Portable ZIP created: $zipPath" -ForegroundColor Green
 
