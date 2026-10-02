@@ -674,6 +674,38 @@ func (m *Manager) DeleteFunction(pkgName, funcFileName string) error {
 	return m.Reload()
 }
 
+// DeletePackage removes an internal package directory from disk and reloads.
+// It rejects empty names, _shared, path traversals, non-existent packages, and external workspaces.
+func (m *Manager) DeletePackage(pkgName string) error {
+	cleanName := filepath.Clean(strings.TrimSpace(pkgName))
+	if cleanName == "" || cleanName == "." || cleanName == ".." || cleanName == "_shared" {
+		return fmt.Errorf("cannot delete package '%s'", pkgName)
+	}
+	if strings.Contains(cleanName, "/") || strings.Contains(cleanName, "\\") {
+		return fmt.Errorf("invalid package name '%s'", pkgName)
+	}
+
+	m.mu.RLock()
+	if pkg, exists := m.packages[cleanName]; exists && pkg.IsExternal {
+		m.mu.RUnlock()
+		return fmt.Errorf("package '%s' is an external workspace; use unlink instead", cleanName)
+	}
+	m.mu.RUnlock()
+
+	pkgDir := filepath.Join(m.packagesDir, cleanName)
+	fi, err := os.Stat(pkgDir)
+	if os.IsNotExist(err) || !fi.IsDir() {
+		return fmt.Errorf("package '%s' does not exist", cleanName)
+	}
+
+	if err := os.RemoveAll(pkgDir); err != nil {
+		return fmt.Errorf("failed to delete package directory: %w", err)
+	}
+
+	return m.Reload()
+}
+
+
 func (m *Manager) GetWorkspaceConfig(pkgName string) *domain.WorkspaceConfig {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

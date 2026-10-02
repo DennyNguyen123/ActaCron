@@ -87,6 +87,30 @@ func (h *APIHandler) handleListPackages(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, pkgs)
 }
 
+func (h *APIHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request) {
+	pkgName := r.URL.Query().Get("package")
+	if pkgName == "" && r.Method == http.MethodPost {
+		var req struct {
+			Package string `json:"package"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		pkgName = req.Package
+	}
+	if pkgName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing package parameter"})
+		return
+	}
+	if h.mgr == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "manager not initialized"})
+		return
+	}
+	if err := h.mgr.DeletePackage(pkgName); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
 func (h *APIHandler) handleGitClone(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL        string `json:"url"`

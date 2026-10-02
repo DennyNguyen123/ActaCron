@@ -322,27 +322,39 @@
       const isExternal = !!pkgMeta.is_external;
       const isMissing = pkgMeta.status === "missing";
 
+      const isGit = !!pkgMeta.is_git;
+
       const groupLi = document.createElement("li");
       groupLi.className = "tree-package-group" + (isCollapsed ? " collapsed" : "") + (isMissing ? " package-missing" : "");
 
       const headerDiv = document.createElement("div");
       headerDiv.className = "tree-package-header" + (isShared ? " shared-package" : "");
 
-      const statusBadge = isMissing
-        ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(239,68,68,0.2); color:#ef4444; font-weight:700; flex-shrink:0;">MISSING</span>`
-        : (isExternal ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; flex-shrink:0;">EXT</span>` : "");
+      let badgesHtml = "";
+      if (isMissing) {
+        badgesHtml += `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(239,68,68,0.2); color:#ef4444; font-weight:700; flex-shrink:0;">MISSING</span>`;
+      } else if (isExternal) {
+        badgesHtml += `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; flex-shrink:0;">EXT</span>`;
+      }
+      if (isGit) {
+        badgesHtml += `<span class="badge-git" title="Git Repository">GIT</span>`;
+      }
 
       const headerTitle = isShared 
-        ? `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><span>🔗</span> <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">_shared</strong> <span class="badge-shared-library" style="flex-shrink:0;">LIB</span></div>`
-        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span>${statusBadge}</div>`;
+        ? `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><span>🔗</span> <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">_shared</strong> <span class="badge-shared-library" style="flex-shrink:0;">LIB</span>${isGit ? '<span class="badge-git" title="Git Repository">GIT</span>' : ''}</div>`
+        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span>${badgesHtml}</div>`;
 
       const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
       const unlinkTooltip = (window.I18n && window.I18n.t("unlink_workspace")) || "Unlink Workspace";
+      const deleteTooltip = (window.I18n && window.I18n.t("delete_workspace")) || "Delete Workspace";
       const actionButtons = `
         <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
           ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" data-i18n-title="ws_config_tooltip" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
           <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
-          ${isExternal ? `<button class="btn-pkg-action btn-pkg-unlink" title="${unlinkTooltip}" data-pkg="${pkgName}">🔗❌</button>` : ''}
+          ${isExternal 
+            ? `<button class="btn-pkg-action btn-pkg-unlink" title="${unlinkTooltip}" data-pkg="${pkgName}">🔗❌</button>` 
+            : (!isShared ? `<button class="btn-pkg-action btn-pkg-delete" title="${deleteTooltip}" data-pkg="${pkgName}">🗑️</button>` : '')
+          }
         </div>
       `;
 
@@ -398,6 +410,30 @@
             }
           } catch (err) {
             alert("Error unlinking workspace: " + err.message);
+          }
+        });
+      }
+
+      const deleteBtn = headerDiv.querySelector(".btn-pkg-delete");
+      if (deleteBtn) {
+        deleteBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const confirmTpl = (window.I18n && window.I18n.t("confirm_delete_workspace")) || 
+            "Are you sure you want to permanently delete workspace '{name}' from disk? This action cannot be undone.";
+          const confirmMsg = confirmTpl.replace("{name}", pkgName);
+          if (!confirm(confirmMsg)) return;
+          try {
+            const res = await fetch("/api/packages?package=" + encodeURIComponent(pkgName), {
+              method: "DELETE"
+            });
+            if (res.ok) {
+              await loadFunctions();
+            } else {
+              const err = await res.json();
+              alert("Failed to delete workspace: " + (err.error || "Unknown error"));
+            }
+          } catch (err) {
+            alert("Error deleting workspace: " + err.message);
           }
         });
       }
@@ -1327,6 +1363,30 @@ function main(params) {
         alert("Error creating script: " + err.message);
       }
     });
+
+    // Workspace Dropdown Menu (+ Workspace ▾)
+    const wsWrapper = document.getElementById("wsDropdownWrapper");
+    const wsMenuBtn = document.getElementById("btnWorkspaceMenu");
+    const wsDropdown = document.getElementById("dropdownWorkspaceMenu");
+
+    if (wsMenuBtn && wsDropdown) {
+      wsMenuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        wsDropdown.classList.toggle("show");
+      });
+
+      document.addEventListener("click", (e) => {
+        if (wsDropdown.classList.contains("show") && wsWrapper && !wsWrapper.contains(e.target)) {
+          wsDropdown.classList.remove("show");
+        }
+      });
+
+      wsDropdown.querySelectorAll(".dropdown-item").forEach(item => {
+        item.addEventListener("click", () => {
+          wsDropdown.classList.remove("show");
+        });
+      });
+    }
 
     // Git Clone Modal
     const modalClone = document.getElementById("modalGitClone");

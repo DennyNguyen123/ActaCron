@@ -17,7 +17,7 @@
         </svg>
         <span data-i18n="app_title">ActaCron</span>
       </div>
-      <span class="brand-badge" id="app-version-badge" title="Click to check for updates" style="cursor:pointer;">v1.0.3</span>
+      <span class="brand-badge" id="app-version-badge" title="Click to check for updates" style="cursor:pointer;">v1.0.4</span>
     </div>
 
     <div class="header-status-group">
@@ -138,10 +138,19 @@
           <aside class="tree-pane" id="treePane">
             <div class="pane-header">
               <span data-i18n="scripts_tree">Packages & Scripts</span>
-              <div style="display:flex; gap:4px;">
+              <div style="display:flex; gap:4px; align-items:center;">
                 <button class="btn btn-outline btn-sm" id="btnNewScript" data-i18n="new_script">+ Script</button>
-                <button class="btn btn-outline btn-sm" id="btnOpenExternalFolderModal" title="Open External Folder as Workspace" data-i18n="add_folder">+ Folder</button>
-                <button class="btn btn-outline btn-sm" id="btnOpenCloneModal">+ Git</button>
+                <div class="dropdown-wrapper" id="wsDropdownWrapper" style="position:relative;">
+                  <button class="btn btn-outline btn-sm" id="btnWorkspaceMenu" data-i18n="add_workspace_menu" title="Add Workspace">+ Workspace ▾</button>
+                  <div class="dropdown-menu" id="dropdownWorkspaceMenu">
+                    <button class="dropdown-item" id="btnOpenExternalFolderModal" title="Open External Folder as Workspace">
+                      <span>📁</span> <span data-i18n="add_local_folder">Add Local Folder</span>
+                    </button>
+                    <button class="dropdown-item" id="btnOpenCloneModal" title="Clone Git Repository">
+                      <span>🌐</span> <span data-i18n="clone_git_repo">Clone Git Repo</span>
+                    </button>
+                  </div>
+                </div>
                 <button class="btn btn-outline btn-sm" id="btnOpenWorkspaceFolder" title="Open Workspace Directory" data-i18n="open_folder">📁 Open Dir</button>
               </div>
             </div>

@@ -457,3 +457,65 @@ func TestWatcherExternalWorkspaceAddAndRemove(t *testing.T) {
 		t.Fatalf("expected ext1 to still be loaded")
 	}
 }
+
+func TestDeletePackage(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test.db")
+	db, err := storage.New(dbFile)
+	if err != nil {
+		t.Fatalf("failed db: %v", err)
+	}
+	defer db.Close()
+
+	runner := engine.New(db, 10, false)
+	mgr := manager.New(tmpDir, runner, db)
+	if err := mgr.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create dummy package
+	dummyPkg := filepath.Join(tmpDir, "dummy_pkg")
+	if err := os.MkdirAll(dummyPkg, 0755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dummyPkg, "test.js"), []byte("// test"), 0644)
+	_ = mgr.Reload()
+
+	// 1. Should fail on empty or _shared (including trailing slash attempts)
+	if err := mgr.DeletePackage(""); err == nil {
+		t.Error("expected error for empty package name")
+	}
+	if err := mgr.DeletePackage("_shared"); err == nil {
+		t.Error("expected error deleting _shared")
+	}
+	if err := mgr.DeletePackage("_shared/"); err == nil {
+		t.Error("expected error deleting _shared/")
+	}
+	if err := mgr.DeletePackage("_shared\\"); err == nil {
+		t.Error("expected error deleting _shared\\")
+	}
+
+	// 2. Should fail on path traversal
+	if err := mgr.DeletePackage("../something"); err == nil {
+		t.Error("expected error for path traversal")
+	}
+
+	// 3. Should fail if it's an external workspace (must unlink instead)
+	extDir := t.TempDir()
+	_ = db.AddExternalWorkspace("ext_test", extDir)
+	_ = mgr.Reload()
+	if err := mgr.DeletePackage("ext_test"); err == nil {
+		t.Error("expected error deleting external workspace")
+	}
+
+	// 4. Should succeed on valid internal dummy package
+	if err := mgr.DeletePackage("dummy_pkg"); err != nil {
+		t.Fatalf("unexpected error deleting dummy_pkg: %v", err)
+	}
+
+	// Verify directory removed from disk
+	if _, err := os.Stat(dummyPkg); !os.IsNotExist(err) {
+		t.Errorf("expected dummy_pkg directory to be deleted")
+	}
+}
+

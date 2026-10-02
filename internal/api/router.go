@@ -35,7 +35,14 @@ func NewRouter(
 
 	// API routes
 	mux.HandleFunc("/api/health", handler.handleHealth)
-	mux.HandleFunc("/api/packages", handler.handleListPackages)
+	mux.HandleFunc("/api/packages", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			handler.handleDeletePackage(w, r)
+			return
+		}
+		handler.handleListPackages(w, r)
+	})
+	mux.HandleFunc("/api/packages/delete", handler.handleDeletePackage)
 	mux.HandleFunc("/api/packages/clone", handler.handleGitClone)
 	mux.HandleFunc("/api/packages/pull", handler.handleGitPull)
 	mux.HandleFunc("/api/packages/sync", handler.handleGitSyncAll)

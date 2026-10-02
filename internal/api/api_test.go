@@ -385,5 +385,63 @@ func TestExternalWorkspaceAPI(t *testing.T) {
 	}
 }
 
+func TestAPIDeletePackage(t *testing.T) {
+	pkgDir := t.TempDir()
+	db, err := storage.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed db: %v", err)
+	}
+	defer db.Close()
+
+	mgr := manager.New(pkgDir, nil, db)
+	_ = mgr.Reload()
+
+	router := api.NewRouter(mgr, nil, db, nil, nil, nil)
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	// Create dummy package
+	p1 := filepath.Join(pkgDir, "dummy_to_delete")
+	os.MkdirAll(p1, 0755)
+	os.WriteFile(filepath.Join(p1, "run.js"), []byte("// ok"), 0644)
+	_ = mgr.Reload()
+
+	// 1. DELETE without package query param -> 400
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/packages", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 on missing package, got %d", resp.StatusCode)
+	}
+
+	// 2. DELETE _shared -> 400
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/packages?package=_shared", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 on _shared, got %d", resp.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/packages?package=_shared/", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 on _shared/, got %d", resp.StatusCode)
+	}
+
+	// 3. DELETE valid package -> 200
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/packages?package=dummy_to_delete", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 deleting dummy_to_delete, got %d", resp.StatusCode)
+	}
+
+	// Verify package deleted on disk and in manager
+	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+		t.Fatalf("expected dummy_to_delete to be removed from disk")
+	}
+	if mgr.GetPackage("dummy_to_delete") != nil {
+		t.Fatalf("expected dummy_to_delete to be removed from manager")
+	}
+}
+
+
 
 
