@@ -94,6 +94,12 @@ func (s *DB) initSchema() error {
 		setting_value TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS external_workspaces (
+		name TEXT PRIMARY KEY,
+		path TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -408,4 +414,56 @@ func (s *DB) DeleteOldLogs(days int) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (s *DB) AddExternalWorkspace(name, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	query := `INSERT OR REPLACE INTO external_workspaces (name, path, created_at) VALUES (?, ?, ?)`
+	_, err := s.db.Exec(query, name, path, time.Now())
+	return err
+}
+
+func (s *DB) ListExternalWorkspaces() ([]domain.ExternalWorkspace, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	query := `SELECT name, path, created_at FROM external_workspaces ORDER BY name ASC`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.ExternalWorkspace
+	for rows.Next() {
+		var ws domain.ExternalWorkspace
+		if err := rows.Scan(&ws.Name, &ws.Path, &ws.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, ws)
+	}
+	return result, nil
+}
+
+func (s *DB) GetExternalWorkspace(name string) (*domain.ExternalWorkspace, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	query := `SELECT name, path, created_at FROM external_workspaces WHERE name = ?`
+	row := s.db.QueryRow(query, name)
+	var ws domain.ExternalWorkspace
+	if err := row.Scan(&ws.Name, &ws.Path, &ws.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &ws, nil
+}
+
+func (s *DB) DeleteExternalWorkspace(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	query := `DELETE FROM external_workspaces WHERE name = ?`
+	_, err := s.db.Exec(query, name)
+	return err
 }

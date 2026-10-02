@@ -109,3 +109,50 @@ func TestRunCountLifecycle(t *testing.T) {
 	}
 }
 
+func TestExternalWorkspacesCRUD(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "actacron-storage-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := tmpDir + "/test.db"
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer db.Close()
+
+	// 1. Add external workspace
+	err = db.AddExternalWorkspace("my_external", "D:/External/Scripts")
+	if err != nil {
+		t.Fatalf("expected no error adding external workspace, got: %v", err)
+	}
+
+	// 2. Get external workspace
+	ws, err := db.GetExternalWorkspace("my_external")
+	if err != nil || ws == nil {
+		t.Fatalf("failed to get external workspace: %v", err)
+	}
+	if ws.Name != "my_external" || ws.Path != "D:/External/Scripts" {
+		t.Fatalf("unexpected ws data: %+v", ws)
+	}
+
+	// 3. List external workspaces
+	list, err := db.ListExternalWorkspaces()
+	if err != nil || len(list) != 1 {
+		t.Fatalf("expected 1 external workspace, got %d, err: %v", len(list), err)
+	}
+
+	// 4. Delete external workspace
+	err = db.DeleteExternalWorkspace("my_external")
+	if err != nil {
+		t.Fatalf("failed to delete external workspace: %v", err)
+	}
+
+	listAfter, err := db.ListExternalWorkspaces()
+	if err != nil || len(listAfter) != 0 {
+		t.Fatalf("expected 0 external workspaces after delete, got %d", len(listAfter))
+	}
+}
+

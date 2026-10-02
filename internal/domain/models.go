@@ -52,13 +52,20 @@ type ExecutionLog struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-type PackageInfo struct {
+type ExternalWorkspace struct {
 	Name      string    `json:"name"`
 	Path      string    `json:"path"`
-	IsGit     bool      `json:"is_git"`
-	RemoteURL string    `json:"remote_url,omitempty"`
-	Branch    string    `json:"branch,omitempty"`
-	Status    string    `json:"status"` // clean, modified, behind, conflict
-	Functions []string  `json:"functions"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type PackageInfo struct {
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	IsGit      bool      `json:"is_git"`
+	IsExternal bool      `json:"is_external"`
+	RemoteURL  string    `json:"remote_url,omitempty"`
+	Branch     string    `json:"branch,omitempty"`
+	Status     string    `json:"status"` // clean, modified, behind, conflict
+	Functions  []string  `json:"functions"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
