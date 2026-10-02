@@ -17,7 +17,7 @@
         </svg>
         <span data-i18n="app_title">ActaCron</span>
       </div>
-      <span class="brand-badge" id="app-version-badge" title="Click to check for updates" style="cursor:pointer;">v1.0.1</span>
+      <span class="brand-badge" id="app-version-badge" title="Click to check for updates" style="cursor:pointer;">v1.0.2</span>
     </div>
 
     <div class="header-status-group">
@@ -399,12 +399,15 @@
 
               <div class="form-group">
                 <label style="font-weight:600;">Application Updates</label>
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:12px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:6px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:12px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:6px; gap:12px; flex-wrap:wrap;">
                   <div>
                     <div style="font-weight:500;">Version: <span id="settingsCurrentVersion" style="color:var(--color-accent); font-family:var(--font-mono);">--</span></div>
                     <div class="form-help" id="settingsUpdateStatus">Check for the latest release on GitHub.</div>
                   </div>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btnCheckUpdateSettings">Check for Updates</button>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <button type="button" class="btn btn-primary btn-sm" id="btnDirectUpdateSettings" style="display:none;">Update Now</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnCheckUpdateSettings">Check for Updates</button>
+                  </div>
                 </div>
               </div>
 

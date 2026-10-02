@@ -1541,6 +1541,7 @@ function main(params) {
     const settingsVerEl = document.getElementById("settingsCurrentVersion");
     const settingsStatusEl = document.getElementById("settingsUpdateStatus");
     const btnCheckSettings = document.getElementById("btnCheckUpdateSettings");
+    const btnDirectUpdate = document.getElementById("btnDirectUpdateSettings");
 
     const modalUpdate = document.getElementById("modalUpdate");
     const btnCloseUpdateModal = document.getElementById("btnCloseUpdateModal");
@@ -1563,11 +1564,13 @@ function main(params) {
           if (badgeEl) badgeEl.textContent = displayVer;
           if (settingsVerEl) settingsVerEl.textContent = displayVer;
         }
+        // Check for updates in background
+        checkForUpdates(false);
       })
       .catch(() => {});
 
     function closeUpdateModal() {
-      if (modalUpdate) modalUpdate.classList.remove("active");
+      if (modalUpdate) modalUpdate.classList.remove("open", "active");
     }
 
     if (btnCloseUpdateModal) btnCloseUpdateModal.addEventListener("click", closeUpdateModal);
@@ -1592,6 +1595,10 @@ function main(params) {
           if (settingsStatusEl) {
             settingsStatusEl.innerHTML = `<span style="color:var(--color-accent); font-weight:600;">Update ${data.tag_name} available!</span>`;
           }
+          if (btnDirectUpdate) {
+            btnDirectUpdate.textContent = `Update to ${data.tag_name}`;
+            btnDirectUpdate.style.display = "inline-flex";
+          }
           if (modalUpdateVersion) modalUpdateVersion.textContent = `New Version: ${data.tag_name}`;
           if (modalUpdateDate) {
             const pubDate = data.published_at ? new Date(data.published_at).toLocaleDateString() : "";
@@ -1603,8 +1610,11 @@ function main(params) {
             btnApplyUpdate.disabled = false;
             btnApplyUpdate.textContent = "Update & Restart";
           }
-          if (modalUpdate) modalUpdate.classList.add("active");
+          if (manual && modalUpdate) modalUpdate.classList.add("open");
         } else {
+          if (btnDirectUpdate) {
+            btnDirectUpdate.style.display = "none";
+          }
           if (settingsStatusEl) {
             settingsStatusEl.textContent = `ActaCron is up to date (${data.current_version ? (data.current_version.startsWith('v') ? data.current_version : 'v' + data.current_version) : 'latest'}).`;
           }
@@ -1613,6 +1623,9 @@ function main(params) {
           }
         }
       } catch (err) {
+        if (btnDirectUpdate) {
+          btnDirectUpdate.style.display = "none";
+        }
         if (settingsStatusEl) settingsStatusEl.textContent = "Check failed: " + err.message;
         if (manual) {
           alert("Failed to check for updates: " + err.message);
@@ -1630,6 +1643,13 @@ function main(params) {
     }
     if (btnCheckSettings) {
       btnCheckSettings.addEventListener("click", () => checkForUpdates(true));
+    }
+    if (btnDirectUpdate) {
+      btnDirectUpdate.addEventListener("click", () => {
+        if (modalUpdate) {
+          modalUpdate.classList.add("open");
+        }
+      });
     }
 
     if (btnApplyUpdate) {

@@ -244,6 +244,7 @@ func TestUpdateUIElements(t *testing.T) {
 		`id="modalUpdate"`,
 		`id="btnApplyUpdate"`,
 		`id="btnCheckUpdateSettings"`,
+		`id="btnDirectUpdateSettings"`,
 	}
 	for _, el := range requiredElements {
 		if !strings.Contains(htmlStr, el) {
@@ -258,10 +259,32 @@ func TestAppJSUpdateWiring(t *testing.T) {
 		t.Fatalf("failed reading js/app.js: %v", err)
 	}
 	appStr := string(data)
-	for _, token := range []string{"btnCheckUpdateSettings", "modalUpdate", "btnApplyUpdate", "/api/version", "/api/update/check"} {
+	for _, token := range []string{"btnCheckUpdateSettings", "btnDirectUpdateSettings", "modalUpdate", "btnApplyUpdate", "/api/version", "/api/update/check"} {
 		if !strings.Contains(appStr, token) {
 			t.Fatalf("expected js/app.js to reference %s", token)
 		}
+	}
+}
+
+func TestCSSModalOverlaySupport(t *testing.T) {
+	data, err := web.Assets.ReadFile("css/style.css")
+	if err != nil {
+		t.Fatalf("failed reading css/style.css: %v", err)
+	}
+	cssStr := string(data)
+	if !strings.Contains(cssStr, ".modal-overlay.open") || !strings.Contains(cssStr, ".modal-overlay.active") {
+		t.Fatalf("expected style.css to support both .modal-overlay.open and .modal-overlay.active")
+	}
+}
+
+func TestDirectUpdateButtonPresent(t *testing.T) {
+	data, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed reading index.html: %v", err)
+	}
+	htmlStr := string(data)
+	if !strings.Contains(htmlStr, `id="btnDirectUpdateSettings"`) {
+		t.Fatalf("expected index.html to contain element id=\"btnDirectUpdateSettings\"")
 	}
 }
 
