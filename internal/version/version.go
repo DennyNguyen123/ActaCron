@@ -2,7 +2,7 @@ package version
 
 var (
 	// Version is populated at build time via -ldflags.
-	Version = "1.0.2"
+	Version = "1.0.3"
 	// GitCommit is populated at build time via -ldflags.
 	GitCommit = "dev"
 	// BuildDate is populated at build time via -ldflags.
