@@ -134,79 +134,25 @@ func (m *Manager) Reload() error {
 			continue
 		}
 
-		// 1. Read workspace.json if present
-		wsCfgPath := filepath.Join(pkgPath, "workspace.json")
-		wsCfg := &domain.WorkspaceConfig{Name: pkgName}
-		if wsData, err := os.ReadFile(wsCfgPath); err == nil {
-			_ = json.Unmarshal(wsData, wsCfg)
-		}
-		newWorkspaceConfigs[pkgName] = wsCfg
+		m.scanPackageFolder(pkgName, pkgPath, false, isGit, newPackages, newFunctions, newFileCode, newWorkspaceConfigs, newWorkspaceEnvs)
+	}
 
-		// 2. Read workspace .env if present
-		wsEnvPath := filepath.Join(pkgPath, ".env")
-		if envMap, err := settings.ReadEnv(wsEnvPath); err == nil && len(envMap) > 0 {
-			newWorkspaceEnvs[pkgName] = envMap
-		} else {
-			wsExampleEnvPath := filepath.Join(pkgPath, ".env.example")
-			if envMapExample, errExample := settings.ReadEnv(wsExampleEnvPath); errExample == nil && len(envMapExample) > 0 {
-				newWorkspaceEnvs[pkgName] = envMapExample
+	// Load external workspaces from database
+	if m.db != nil {
+		if extList, err := m.db.ListExternalWorkspaces(); err == nil {
+			for _, extWs := range extList {
+				if fi, err := os.Stat(extWs.Path); err == nil && fi.IsDir() {
+					isGit := false
+					if _, err := os.Stat(filepath.Join(extWs.Path, ".git")); err == nil {
+						isGit = true
+					}
+					m.scanPackageFolder(extWs.Name, extWs.Path, true, isGit, newPackages, newFunctions, newFileCode, newWorkspaceConfigs, newWorkspaceEnvs)
+					if m.watcher != nil {
+						_ = m.watcher.Add(extWs.Path)
+					}
+				}
 			}
 		}
-
-		pkgInfo := &domain.PackageInfo{
-			Name:      pkgName,
-			Path:      pkgPath,
-			IsGit:     isGit,
-			Status:    "clean",
-			Functions: []string{},
-			UpdatedAt: time.Now(),
-		}
-
-		// Read .js files in package
-		files, err := os.ReadDir(pkgPath)
-		if err == nil {
-			for _, file := range files {
-				if file.IsDir() || filepath.Ext(file.Name()) != ".js" {
-					continue
-				}
-
-				filePath := filepath.Join(pkgPath, file.Name())
-				codeBytes, err := os.ReadFile(filePath)
-				if err != nil {
-					continue
-				}
-
-				code := string(codeBytes)
-				meta, err := parser.Parse(code, file.Name())
-				if err != nil {
-					// Syntax error or parse error, skip or log
-					continue
-				}
-
-				meta.Package = pkgName
-				meta.FilePath = file.Name()
-
-				// Query enabled state and run count from DB
-				if m.db != nil {
-					enabled, _, _ := m.db.GetFunctionState(pkgName, meta.Name)
-					meta.IsEnabled = enabled
-					runCount, _ := m.db.GetRunCount(pkgName, meta.Name)
-					meta.RunCount = runCount
-				}
-
-				baseFileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-				if meta.Name == "" {
-					meta.Name = baseFileName
-				}
-
-				fullKey := pkgName + "/" + baseFileName
-				newFunctions[fullKey] = meta
-				newFileCode[fullKey] = code
-				pkgInfo.Functions = append(pkgInfo.Functions, meta.Name)
-			}
-		}
-
-		newPackages[pkgName] = pkgInfo
 	}
 
 	m.packages = newPackages
@@ -215,6 +161,92 @@ func (m *Manager) Reload() error {
 	m.workspaceConfigs = newWorkspaceConfigs
 	m.workspaceEnvs = newWorkspaceEnvs
 	return nil
+}
+
+func (m *Manager) scanPackageFolder(
+	pkgName, pkgPath string,
+	isExternal bool,
+	isGit bool,
+	newPackages map[string]*domain.PackageInfo,
+	newFunctions map[string]*domain.FunctionMeta,
+	newFileCode map[string]string,
+	newWorkspaceConfigs map[string]*domain.WorkspaceConfig,
+	newWorkspaceEnvs map[string]map[string]string,
+) {
+	// 1. Read workspace.json if present
+	wsCfgPath := filepath.Join(pkgPath, "workspace.json")
+	wsCfg := &domain.WorkspaceConfig{Name: pkgName}
+	if wsData, err := os.ReadFile(wsCfgPath); err == nil {
+		_ = json.Unmarshal(wsData, wsCfg)
+	}
+	newWorkspaceConfigs[pkgName] = wsCfg
+
+	// 2. Read workspace .env if present
+	wsEnvPath := filepath.Join(pkgPath, ".env")
+	if envMap, err := settings.ReadEnv(wsEnvPath); err == nil && len(envMap) > 0 {
+		newWorkspaceEnvs[pkgName] = envMap
+	} else {
+		wsExampleEnvPath := filepath.Join(pkgPath, ".env.example")
+		if envMapExample, errExample := settings.ReadEnv(wsExampleEnvPath); errExample == nil && len(envMapExample) > 0 {
+			newWorkspaceEnvs[pkgName] = envMapExample
+		}
+	}
+
+	pkgInfo := &domain.PackageInfo{
+		Name:       pkgName,
+		Path:       pkgPath,
+		IsGit:      isGit,
+		IsExternal: isExternal,
+		Status:     "clean",
+		Functions:  []string{},
+		UpdatedAt:  time.Now(),
+	}
+
+	// Read .js files in package
+	files, err := os.ReadDir(pkgPath)
+	if err == nil {
+		for _, file := range files {
+			if file.IsDir() || filepath.Ext(file.Name()) != ".js" {
+				continue
+			}
+
+			filePath := filepath.Join(pkgPath, file.Name())
+			codeBytes, err := os.ReadFile(filePath)
+			if err != nil {
+				continue
+			}
+
+			code := string(codeBytes)
+			meta, err := parser.Parse(code, file.Name())
+			if err != nil {
+				// Syntax error or parse error, skip or log
+				continue
+			}
+
+			meta.Package = pkgName
+			meta.FilePath = file.Name()
+
+			// Query enabled state and run count from DB
+			if m.db != nil {
+				enabled, _, _ := m.db.GetFunctionState(pkgName, meta.Name)
+				meta.IsEnabled = enabled
+				runCount, _ := m.db.GetRunCount(pkgName, meta.Name)
+				meta.RunCount = runCount
+			}
+
+			baseFileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+			if meta.Name == "" {
+				meta.Name = baseFileName
+			}
+
+			fullKey := pkgName + "/" + baseFileName
+			newFunctions[fullKey] = meta
+			newFileCode[fullKey] = code
+			pkgInfo.Functions = append(pkgInfo.Functions, meta.Name)
+		}
+	}
+
+	newPackages[pkgName] = pkgInfo
 }
 
 func (m *Manager) ListPackages() []*domain.PackageInfo {
@@ -232,6 +264,15 @@ func (m *Manager) GetPackage(name string) *domain.PackageInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.packages[name]
+}
+
+func (m *Manager) GetPackageDir(pkgName string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if pkg, ok := m.packages[pkgName]; ok && pkg.Path != "" {
+		return pkg.Path, nil
+	}
+	return filepath.Join(m.packagesDir, pkgName), nil
 }
 
 func (m *Manager) ListFunctions() []*domain.FunctionMeta {
@@ -287,7 +328,7 @@ func (m *Manager) SaveFunctionCode(pkgName, funcFileName, code string) error {
 		return fmt.Errorf("validation error: %w", err)
 	}
 
-	pkgPath := filepath.Join(m.packagesDir, pkgName)
+	pkgPath, _ := m.GetPackageDir(pkgName)
 	if err := os.MkdirAll(pkgPath, 0755); err != nil {
 		return err
 	}
@@ -364,13 +405,21 @@ func (m *Manager) callWithTrigger(ctx context.Context, target string, params int
 		})
 
 		// 2. Internal package & _shared require API
-		currentDir := filepath.Join(m.packagesDir, fn.Package)
+		pkgDir, _ := m.GetPackageDir(fn.Package)
+		currentDir := pkgDir
 
 		var executeRequire func(resolvedPath, scriptName string) (goja.Value, error)
 		executeRequire = func(resolvedPath, scriptName string) (goja.Value, error) {
 			cleanPackagesDir := filepath.Clean(m.packagesDir)
-			if !strings.HasPrefix(resolvedPath, cleanPackagesDir+string(filepath.Separator)) && resolvedPath != cleanPackagesDir {
-				return nil, fmt.Errorf("security error: path traversal outside packages not permitted")
+			cleanPkgDir := filepath.Clean(pkgDir)
+			cleanSharedDir := filepath.Clean(filepath.Join(m.packagesDir, "_shared"))
+
+			isInsidePkg := strings.HasPrefix(resolvedPath, cleanPkgDir+string(filepath.Separator)) || resolvedPath == cleanPkgDir
+			isInsidePackages := strings.HasPrefix(resolvedPath, cleanPackagesDir+string(filepath.Separator)) || resolvedPath == cleanPackagesDir
+			isInsideShared := strings.HasPrefix(resolvedPath, cleanSharedDir+string(filepath.Separator)) || resolvedPath == cleanSharedDir
+
+			if !isInsidePkg && !isInsidePackages && !isInsideShared {
+				return nil, fmt.Errorf("security error: path traversal outside workspace or _shared not permitted")
 			}
 
 			reqCode, reqErr := os.ReadFile(resolvedPath)
@@ -550,7 +599,17 @@ func (m *Manager) StartWatcher() error {
 		}
 	}()
 
-	return watcher.Add(m.packagesDir)
+	if err := watcher.Add(m.packagesDir); err != nil {
+		return err
+	}
+	m.mu.RLock()
+	for _, pkg := range m.packages {
+		if pkg.IsExternal && pkg.Path != "" {
+			_ = watcher.Add(pkg.Path)
+		}
+	}
+	m.mu.RUnlock()
+	return nil
 }
 
 func (m *Manager) StopWatcher() {
@@ -568,7 +627,7 @@ func (m *Manager) DeleteFunction(pkgName, funcFileName string) error {
 	if !strings.HasSuffix(funcFileName, ".js") {
 		funcFileName += ".js"
 	}
-	pkgPath := filepath.Join(m.packagesDir, filepath.Base(pkgName))
+	pkgPath, _ := m.GetPackageDir(pkgName)
 	filePath := filepath.Join(pkgPath, funcFileName)
 
 	if err := os.Remove(filePath); err != nil {
@@ -635,13 +694,15 @@ func (m *Manager) GetWorkspaceEnv(pkgName string) map[string]string {
 }
 
 func (m *Manager) HasWorkspaceEnvFile(pkgName string) bool {
-	envPath := filepath.Join(m.packagesDir, pkgName, ".env")
+	pkgPath, _ := m.GetPackageDir(pkgName)
+	envPath := filepath.Join(pkgPath, ".env")
 	info, err := os.Stat(envPath)
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func (m *Manager) GetWorkspaceExampleEnv(pkgName string) map[string]string {
-	envPath := filepath.Join(m.packagesDir, pkgName, ".env.example")
+	pkgPath, _ := m.GetPackageDir(pkgName)
+	envPath := filepath.Join(pkgPath, ".env.example")
 	if envMap, err := settings.ReadEnv(envPath); err == nil {
 		return envMap
 	}

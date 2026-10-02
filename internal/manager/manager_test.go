@@ -245,3 +245,134 @@ func TestWorkspaceEnvExampleFallback(t *testing.T) {
 		t.Errorf("expected API_URL=real_url from .env override, got %q", envMap2["API_URL"])
 	}
 }
+
+func TestExternalWorkspaceLoadingAndExecution(t *testing.T) {
+	tmpDir := t.TempDir()
+	packagesDir := filepath.Join(tmpDir, "packages")
+	extDir := filepath.Join(tmpDir, "external_project")
+	os.MkdirAll(packagesDir, 0755)
+	os.MkdirAll(extDir, 0755)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer db.Close()
+
+	// Register external workspace in DB
+	err = db.AddExternalWorkspace("myext", extDir)
+	if err != nil {
+		t.Fatalf("failed to add external ws: %v", err)
+	}
+
+	// Create a script and .env in external dir
+	os.WriteFile(filepath.Join(extDir, ".env"), []byte("FOO=bar_ext\n"), 0644)
+	os.WriteFile(filepath.Join(extDir, "calc.js"), []byte(`
+/**
+ * @name calculate
+ */
+function main(params) {
+    return { res: params.a * 2, env: env("FOO") };
+}
+`), 0644)
+
+	runner := engine.New(db, 30, false)
+	mgr := manager.New(packagesDir, runner, db)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("mgr.Reload failed: %v", err)
+	}
+
+	// Verify package is loaded as external
+	pkg := mgr.GetPackage("myext")
+	if pkg == nil {
+		t.Fatalf("expected package myext to exist")
+	}
+	if !pkg.IsExternal {
+		t.Fatalf("expected pkg.IsExternal to be true")
+	}
+	if pkg.Path != extDir {
+		t.Fatalf("expected pkg.Path=%s, got %s", extDir, pkg.Path)
+	}
+
+	// Verify function is loaded
+	fn := mgr.GetFunction("myext/calculate")
+	if fn == nil {
+		t.Fatalf("expected function myext/calculate to exist")
+	}
+
+	// Execute function
+	ctx := context.Background()
+	output, err := mgr.CallWithTrigger(ctx, "myext/calculate", map[string]interface{}{"a": 21}, "test")
+	if err != nil {
+		t.Fatalf("execution failed: %v", err)
+	}
+
+	resMap, ok := output.(map[string]interface{})
+	if !ok || resMap["res"] != int64(42) || resMap["env"] != "bar_ext" {
+		t.Fatalf("unexpected output: %v", output)
+	}
+}
+
+func TestExternalWorkspaceRequire(t *testing.T) {
+	tmpDir := t.TempDir()
+	packagesDir := filepath.Join(tmpDir, "packages")
+	extDir := filepath.Join(tmpDir, "external_require_project")
+	os.MkdirAll(packagesDir, 0755)
+	os.MkdirAll(extDir, 0755)
+
+	// Create shared library in packagesDir/_shared
+	sharedDir := filepath.Join(packagesDir, "_shared")
+	os.MkdirAll(sharedDir, 0755)
+	os.WriteFile(filepath.Join(sharedDir, "math.js"), []byte(`
+function square(x) { return x * x; }
+module.exports = { square: square };
+`), 0644)
+
+	// Create local helper inside external workspace
+	os.WriteFile(filepath.Join(extDir, "helper.js"), []byte(`
+function addTen(x) { return x + 10; }
+module.exports = { addTen: addTen };
+`), 0644)
+
+	// Create main script requiring both local helper and _shared
+	os.WriteFile(filepath.Join(extDir, "main.js"), []byte(`
+var helper = require("./helper");
+var sharedMath = require("_shared/math");
+
+function main(params) {
+    return {
+        tenPlus: helper.addTen(params.val),
+        squared: sharedMath.square(params.val)
+    };
+}
+`), 0644)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("init db failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.AddExternalWorkspace("ext_req", extDir); err != nil {
+		t.Fatalf("add external ws failed: %v", err)
+	}
+
+	runner := engine.New(db, 30, false)
+	mgr := manager.New(packagesDir, runner, db)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("mgr.Reload failed: %v", err)
+	}
+
+	ctx := context.Background()
+	output, err := mgr.CallWithTrigger(ctx, "ext_req/main", map[string]interface{}{"val": 5}, "test")
+	if err != nil {
+		t.Fatalf("execution failed: %v", err)
+	}
+
+	resMap, ok := output.(map[string]interface{})
+	if !ok || resMap["tenPlus"] != int64(15) || resMap["squared"] != int64(25) {
+		t.Fatalf("unexpected require output: %v", output)
+	}
+}
