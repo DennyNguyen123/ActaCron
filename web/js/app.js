@@ -262,12 +262,25 @@
   }
 
   // --- Functions / Workspace ---
+  let packagesInfo = {};
+
   async function loadFunctions() {
     try {
-      const res = await fetch("/api/functions");
-      if (!res.ok) return;
-      const data = await res.json();
-      allFunctions = Array.isArray(data) ? data : (data.functions || []);
+      const [resFuncs, resPkgs] = await Promise.all([
+        fetch("/api/functions"),
+        fetch("/api/packages")
+      ]);
+      if (resFuncs && resFuncs.ok) {
+        const data = await resFuncs.json();
+        allFunctions = Array.isArray(data) ? data : (data.functions || []);
+      }
+      if (resPkgs && resPkgs.ok) {
+        const pkgs = await resPkgs.json();
+        packagesInfo = {};
+        if (Array.isArray(pkgs)) {
+          pkgs.forEach(p => { packagesInfo[p.name] = p; });
+        }
+      }
 
       renderTree(allFunctions);
     } catch (err) {
@@ -288,6 +301,9 @@
 
     // Group by package
     const grouped = {};
+    Object.keys(packagesInfo).forEach(name => {
+      grouped[name] = [];
+    });
     funcs.forEach(f => {
       if (!grouped[f.package]) grouped[f.package] = [];
       grouped[f.package].push(f);
@@ -302,6 +318,8 @@
     pkgNames.forEach(pkgName => {
       const isShared = pkgName === "_shared";
       const isCollapsed = collapsedPackages.has(pkgName);
+      const pkgMeta = packagesInfo[pkgName] || {};
+      const isExternal = !!pkgMeta.is_external;
 
       const groupLi = document.createElement("li");
       groupLi.className = "tree-package-group" + (isCollapsed ? " collapsed" : "");
@@ -309,15 +327,21 @@
       const headerDiv = document.createElement("div");
       headerDiv.className = "tree-package-header" + (isShared ? " shared-package" : "");
 
+      const extBadge = isExternal
+        ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; flex-shrink:0;">EXT</span>`
+        : "";
+
       const headerTitle = isShared 
         ? `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><span>🔗</span> <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">_shared</strong> <span class="badge-shared-library" style="flex-shrink:0;">LIB</span></div>`
-        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span></div>`;
+        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span>${extBadge}</div>`;
 
       const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
+      const unlinkTooltip = (window.I18n && window.I18n.t("unlink_workspace")) || "Unlink Workspace";
       const actionButtons = `
         <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
           ${!isShared ? `<button class="btn-pkg-action btn-pkg-config" data-i18n-title="ws_config_tooltip" title="${cfgTooltip}" data-pkg="${pkgName}">⚙️</button>` : ''}
           <button class="btn-pkg-action btn-pkg-folder" title="Open '${pkgName}' in Explorer" data-pkg="${pkgName}">📁</button>
+          ${isExternal ? `<button class="btn-pkg-action btn-pkg-unlink" title="${unlinkTooltip}" data-pkg="${pkgName}">🔗❌</button>` : ''}
         </div>
       `;
 
@@ -350,6 +374,30 @@
         configBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           openWorkspaceConfigModal(pkgName);
+        });
+      }
+
+      const unlinkBtn = headerDiv.querySelector(".btn-pkg-unlink");
+      if (unlinkBtn) {
+        unlinkBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const confirmTpl = (window.I18n && window.I18n.t("confirm_unlink_workspace")) || 
+            "Are you sure you want to unlink workspace '{name}'? Files on disk will NOT be deleted.";
+          const confirmMsg = confirmTpl.replace("{name}", pkgName);
+          if (!confirm(confirmMsg)) return;
+          try {
+            const res = await fetch("/api/workspace/external?name=" + encodeURIComponent(pkgName), {
+              method: "DELETE"
+            });
+            if (res.ok) {
+              await loadFunctions();
+            } else {
+              const err = await res.json();
+              alert("Failed to unlink: " + (err.error || "Unknown error"));
+            }
+          } catch (err) {
+            alert("Error unlinking workspace: " + err.message);
+          }
         });
       }
 
@@ -1343,6 +1391,109 @@ function main(params) {
           openWorkspaceConfigModal(activeScript.package);
         }
       });
+    }
+
+    // Add External Folder Workspace Modal
+    const modalExtFolder = document.getElementById("modalAddExternalFolder");
+    if (modalExtFolder) {
+      const btnOpenExtModal = document.getElementById("btnOpenExternalFolderModal");
+      if (btnOpenExtModal) {
+        btnOpenExtModal.addEventListener("click", () => {
+          document.getElementById("inputExtFolderPath").value = "";
+          const nameInp = document.getElementById("inputExtWorkspaceName");
+          nameInp.value = "";
+          delete nameInp.dataset.userEdited;
+          modalExtFolder.classList.add("open");
+        });
+      }
+
+      const closeExtModal = () => modalExtFolder.classList.remove("open");
+      const btnCloseExt = document.getElementById("btnCloseAddExternalFolder");
+      if (btnCloseExt) btnCloseExt.addEventListener("click", closeExtModal);
+      const btnCancelExt = document.getElementById("btnCancelAddExternalFolder");
+      if (btnCancelExt) btnCancelExt.addEventListener("click", closeExtModal);
+
+      const pathInput = document.getElementById("inputExtFolderPath");
+      const nameInput = document.getElementById("inputExtWorkspaceName");
+      if (nameInput) {
+        nameInput.addEventListener("input", () => {
+          nameInput.dataset.userEdited = "true";
+        });
+      }
+      if (pathInput) {
+        pathInput.addEventListener("input", () => {
+          if (nameInput && !nameInput.dataset.userEdited) {
+            const parts = pathInput.value.trim().replace(/\\/g, "/").split("/").filter(Boolean);
+            if (parts.length > 0) {
+              nameInput.value = parts[parts.length - 1];
+            }
+          }
+        });
+      }
+
+      const btnBrowse = document.getElementById("btnBrowseFolder");
+      if (btnBrowse) {
+        btnBrowse.addEventListener("click", async () => {
+          btnBrowse.disabled = true;
+          btnBrowse.textContent = "Browsing...";
+          try {
+            const res = await fetch("/api/workspace/pick-folder", { method: "POST" });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.path) {
+                pathInput.value = data.path;
+                if (nameInput && !nameInput.dataset.userEdited) {
+                  const parts = data.path.replace(/\\/g, "/").split("/").filter(Boolean);
+                  if (parts.length > 0) {
+                    nameInput.value = parts[parts.length - 1];
+                  }
+                }
+              }
+            } else {
+              const err = await res.json();
+              alert("Folder picker error: " + (err.error || ""));
+            }
+          } catch (err) {
+            alert("Failed to open folder picker: " + err.message);
+          } finally {
+            btnBrowse.disabled = false;
+            btnBrowse.textContent = (window.I18n && window.I18n.t("browse_folder")) || "📂 Browse...";
+          }
+        });
+      }
+
+      const btnSubmitExt = document.getElementById("btnSubmitExternalFolder");
+      if (btnSubmitExt) {
+        btnSubmitExt.addEventListener("click", async () => {
+          const path = pathInput.value.trim();
+          const name = nameInput.value.trim();
+          if (!path || !name) {
+            alert("Please provide both folder path and workspace name.");
+            return;
+          }
+          btnSubmitExt.disabled = true;
+          btnSubmitExt.textContent = "Adding...";
+          try {
+            const res = await fetch("/api/workspace/external", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: name, path: path })
+            });
+            if (res.ok) {
+              modalExtFolder.classList.remove("open");
+              await loadFunctions();
+            } else {
+              const err = await res.json();
+              alert("Failed to add workspace: " + (err.error || "Unknown error"));
+            }
+          } catch (err) {
+            alert("Error: " + err.message);
+          } finally {
+            btnSubmitExt.disabled = false;
+            btnSubmitExt.textContent = (window.I18n && window.I18n.t("add_workspace")) || "Add Workspace";
+          }
+        });
+      }
     }
   }
 

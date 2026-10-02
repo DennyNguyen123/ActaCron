@@ -140,6 +140,7 @@
               <span data-i18n="scripts_tree">Packages & Scripts</span>
               <div style="display:flex; gap:4px;">
                 <button class="btn btn-outline btn-sm" id="btnNewScript" data-i18n="new_script">+ Script</button>
+                <button class="btn btn-outline btn-sm" id="btnOpenExternalFolderModal" title="Open External Folder as Workspace" data-i18n="add_folder">+ Folder</button>
                 <button class="btn btn-outline btn-sm" id="btnOpenCloneModal">+ Git</button>
                 <button class="btn btn-outline btn-sm" id="btnOpenWorkspaceFolder" title="Open Workspace Directory" data-i18n="open_folder">📁 Open Dir</button>
               </div>
@@ -553,6 +554,38 @@
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" id="btnCancelNewScript" data-i18n="close">Close</button>
         <button class="btn btn-primary btn-sm" id="btnConfirmNewScript">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Add External Folder -->
+  <div class="modal-overlay" id="modalAddExternalFolder">
+    <div class="modal-box" style="max-width: 540px;">
+      <div class="modal-header">
+        <span data-i18n="add_external_folder_title">Add Folder as Workspace</span>
+        <button class="btn btn-outline btn-sm" id="btnCloseAddExternalFolder">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label data-i18n="folder_path">Folder Path</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="inputExtFolderPath" placeholder="D:\Projects\MyScripts" style="flex:1;">
+            <button class="btn btn-outline btn-sm" id="btnBrowseFolder" data-i18n="browse_folder" style="white-space:nowrap;">📂 Browse...</button>
+          </div>
+          <div class="form-help" data-i18n="folder_path_help">Select an existing folder on your computer to use directly.</div>
+        </div>
+        <div class="form-group">
+          <label data-i18n="workspace_name">Workspace Name</label>
+          <input type="text" id="inputExtWorkspaceName" placeholder="MyScripts">
+          <div class="form-help" data-i18n="workspace_name_help">Identifier for this workspace (letters, numbers, underscores).</div>
+        </div>
+        <div style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); border-radius:var(--radius-sm); padding:8px 12px; margin-top:8px; font-size:12px; color:#38bdf8;" data-i18n="external_folder_note">
+          💡 Files will remain in their original folder and will NOT be copied into packages.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btnCancelAddExternalFolder" data-i18n="close">Close</button>
+        <button class="btn btn-primary btn-sm" id="btnSubmitExternalFolder" data-i18n="add_workspace">Add Workspace</button>
       </div>
     </div>
   </div>

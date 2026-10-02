@@ -288,4 +288,18 @@ func TestDirectUpdateButtonPresent(t *testing.T) {
 	}
 }
 
+func TestExternalFolderUIElements(t *testing.T) {
+	data, err := web.Assets.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("failed to read embedded index.html: %v", err)
+	}
+	html := string(data)
+
+	for _, id := range []string{"btnOpenExternalFolderModal", "modalAddExternalFolder", "btnBrowseFolder", "btnSubmitExternalFolder"} {
+		if !strings.Contains(html, id) {
+			t.Errorf("expected index.html to contain element with id %q", id)
+		}
+	}
+}
+
 
