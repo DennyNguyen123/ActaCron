@@ -249,5 +249,75 @@ function main() { return "hello"; }`), 0644)
 	}
 }
 
+func TestSettingsSaveAndPartialUpdate(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_settings_api.db")
+	db, err := storage.New(dbFile)
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	runner := engine.New(db, 10, false)
+	mgr := manager.New(tmpDir, runner, db)
+	sched := scheduler.New(mgr, db)
+	gitSvc := gitmgr.New()
+	settingsSvc := settings.New(db, filepath.Join(tmpDir, ".env"))
+
+	router := api.NewRouter(mgr, sched, db, gitSvc, settingsSvc, nil)
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	// 1. Post General settings using frontend field names
+	generalPayload := `{"port":9000,"timeout_seconds":45,"retention_days":14,"run_on_startup":true,"allow_shell":true}`
+	resp, err := http.Post(ts.URL+"/api/settings", "application/json", strings.NewReader(generalPayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK saving general settings, got %v, err: %v", resp, err)
+	}
+
+	// Verify settings via GET
+	resp, err = http.Get(ts.URL + "/api/settings")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/settings failed: %v", err)
+	}
+	var data map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&data)
+
+	if data["start_with_windows"] != true && data["run_on_startup"] != true {
+		t.Errorf("expected start_with_windows/run_on_startup to be true, got %+v", data)
+	}
+	if data["allow_shell_exec"] != true && data["allow_shell"] != true {
+		t.Errorf("expected allow_shell_exec/allow_shell to be true, got %+v", data)
+	}
+	if int(data["log_retention_days"].(float64)) != 14 && int(data["retention_days"].(float64)) != 14 {
+		t.Errorf("expected retention days to be 14, got %+v", data)
+	}
+
+	// 2. Post UI settings (partial update)
+	uiPayload := `{"theme_accent":"#38BDF8","density":"compact"}`
+	resp, err = http.Post(ts.URL+"/api/settings", "application/json", strings.NewReader(uiPayload))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK saving UI settings, got %v, err: %v", resp, err)
+	}
+
+	// Verify general settings were NOT wiped out by partial UI update
+	resp, err = http.Get(ts.URL + "/api/settings")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/settings failed: %v", err)
+	}
+	data = nil
+	json.NewDecoder(resp.Body).Decode(&data)
+
+	if data["theme_accent"] != "#38BDF8" {
+		t.Errorf("expected theme_accent to be #38BDF8, got %v", data["theme_accent"])
+	}
+	if data["start_with_windows"] != true && data["run_on_startup"] != true {
+		t.Errorf("general setting start_with_windows was wiped out by UI update! got %+v", data)
+	}
+	if data["allow_shell_exec"] != true && data["allow_shell"] != true {
+		t.Errorf("general setting allow_shell_exec was wiped out by UI update! got %+v", data)
+	}
+}
+
 
 

@@ -956,13 +956,13 @@
         const data = await res.json();
         document.getElementById("settingPort").value = data.port || 8080;
         document.getElementById("settingTimeout").value = data.timeout_seconds || 30;
-        document.getElementById("settingRetention").value = data.retention_days || 7;
-        document.getElementById("settingAutostart").checked = !!data.run_on_startup;
-        document.getElementById("settingAllowShell").checked = !!data.allow_shell;
+        document.getElementById("settingRetention").value = data.log_retention_days ?? data.retention_days ?? 7;
+        document.getElementById("settingAutostart").checked = !!(data.start_with_windows ?? data.run_on_startup);
+        document.getElementById("settingAllowShell").checked = !!(data.allow_shell_exec ?? data.allow_shell);
 
         document.getElementById("settingGitAuthor").value = data.git_author_name || "";
         document.getElementById("settingGitEmail").value = data.git_author_email || "";
-        document.getElementById("settingGitToken").value = data.git_token || "";
+        document.getElementById("settingGitToken").value = data.git_default_token ?? data.git_token ?? "";
 
         if (data.language) window.I18n.setLanguage(data.language);
         if (data.theme_accent) {
@@ -1006,8 +1006,11 @@
     const payload = {
       port: parseInt(document.getElementById("settingPort").value, 10),
       timeout_seconds: parseInt(document.getElementById("settingTimeout").value, 10),
+      log_retention_days: parseInt(document.getElementById("settingRetention").value, 10),
       retention_days: parseInt(document.getElementById("settingRetention").value, 10),
+      start_with_windows: document.getElementById("settingAutostart").checked,
       run_on_startup: document.getElementById("settingAutostart").checked,
+      allow_shell_exec: document.getElementById("settingAllowShell").checked,
       allow_shell: document.getElementById("settingAllowShell").checked
     };
     await postSettings(payload);
@@ -1017,6 +1020,7 @@
     const payload = {
       git_author_name: document.getElementById("settingGitAuthor").value,
       git_author_email: document.getElementById("settingGitEmail").value,
+      git_default_token: document.getElementById("settingGitToken").value,
       git_token: document.getElementById("settingGitToken").value
     };
     await postSettings(payload);
@@ -1039,7 +1043,7 @@
       language: lang,
       theme_accent: themeAccentMap[theme] || "#22C55E",
       density: density,
-      editor_font_size: fontSize
+      editor_font_size: parseInt(fontSize, 10) || 14
     };
     await postSettings(payload);
   }

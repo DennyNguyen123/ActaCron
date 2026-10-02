@@ -42,6 +42,20 @@ func (r *Runner) SetAllowShell(allow bool) {
 	r.allowShell = allow
 }
 
+func (r *Runner) AllowShell() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.allowShell
+}
+
+func (r *Runner) SetDefaultTimeoutSec(sec int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if sec > 0 {
+		r.defaultTimeoutSec = sec
+	}
+}
+
 func (r *Runner) DefaultTimeoutSec() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

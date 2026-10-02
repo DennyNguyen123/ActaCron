@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"actacron/internal/storage"
 )
@@ -11,12 +12,16 @@ type AppSettings struct {
 	Port             int    `json:"port"`
 	TimeoutSeconds   int    `json:"timeout_seconds"`
 	LogRetentionDays int    `json:"log_retention_days"`
+	RetentionDays    int    `json:"retention_days"` // alias for frontend compatibility
 	StartWithWindows bool   `json:"start_with_windows"`
+	RunOnStartup     bool   `json:"run_on_startup"` // alias for frontend compatibility
 	AllowShellExec   bool   `json:"allow_shell_exec"`
+	AllowShell       bool   `json:"allow_shell"` // alias for frontend compatibility
 	WindowMode       string `json:"window_mode"` // "edge_app", "browser", "none"
 	GitAuthorName    string `json:"git_author_name"`
 	GitAuthorEmail   string `json:"git_author_email"`
 	GitDefaultToken  string `json:"git_default_token"`
+	GitToken         string `json:"git_token"` // alias for frontend compatibility
 	NotifyOnFailure  bool   `json:"notify_on_failure"`
 	ThemeAccent      string `json:"theme_accent"`   // default: #22C55E
 	Density          string `json:"density"`        // compact, balanced, spacious
@@ -53,11 +58,13 @@ func (s *Service) Get() (*AppSettings, error) {
 	}
 
 	if s.db == nil {
+		cfg.syncAliases()
 		return cfg, nil
 	}
 
 	allSettings, err := s.db.GetAllSettings()
 	if err != nil {
+		cfg.syncAliases()
 		return cfg, err
 	}
 
@@ -78,6 +85,8 @@ func (s *Service) Get() (*AppSettings, error) {
 	}
 	if val, ok := allSettings["start_with_windows"]; ok {
 		cfg.StartWithWindows = val == "true"
+	} else if IsAutoStartEnabled("ActaCron") {
+		cfg.StartWithWindows = true
 	}
 	if val, ok := allSettings["allow_shell_exec"]; ok {
 		cfg.AllowShellExec = val == "true"
@@ -112,13 +121,39 @@ func (s *Service) Get() (*AppSettings, error) {
 		cfg.Language = val
 	}
 
+	cfg.syncAliases()
 	return cfg, nil
+}
+
+func (cfg *AppSettings) syncAliases() {
+	if cfg.RetentionDays > 0 && cfg.LogRetentionDays == 0 {
+		cfg.LogRetentionDays = cfg.RetentionDays
+	} else {
+		cfg.RetentionDays = cfg.LogRetentionDays
+	}
+
+	if cfg.RunOnStartup && !cfg.StartWithWindows {
+		cfg.StartWithWindows = true
+	}
+	cfg.RunOnStartup = cfg.StartWithWindows
+
+	if cfg.AllowShell && !cfg.AllowShellExec {
+		cfg.AllowShellExec = true
+	}
+	cfg.AllowShell = cfg.AllowShellExec
+
+	if cfg.GitToken != "" && cfg.GitDefaultToken == "" {
+		cfg.GitDefaultToken = cfg.GitToken
+	}
+	cfg.GitToken = cfg.GitDefaultToken
 }
 
 func (s *Service) Save(cfg *AppSettings) error {
 	if s.db == nil {
 		return nil
 	}
+
+	cfg.syncAliases()
 
 	pairs := map[string]string{
 		"port":               strconv.Itoa(cfg.Port),
@@ -149,6 +184,117 @@ func (s *Service) Save(cfg *AppSettings) error {
 	}
 
 	return nil
+}
+
+func (s *Service) SaveMap(updates map[string]interface{}) (*AppSettings, error) {
+	if s.db == nil {
+		return s.Get()
+	}
+
+	var autostartChanged bool
+	var autostartEnabled bool
+
+	for k, v := range updates {
+		switch k {
+		case "port":
+			if p, ok := toInt(v); ok && p > 0 {
+				_ = s.db.SetSetting("port", strconv.Itoa(p))
+			}
+		case "timeout_seconds":
+			if t, ok := toInt(v); ok && t > 0 {
+				_ = s.db.SetSetting("timeout_seconds", strconv.Itoa(t))
+			}
+		case "log_retention_days", "retention_days":
+			if r, ok := toInt(v); ok && r > 0 {
+				_ = s.db.SetSetting("log_retention_days", strconv.Itoa(r))
+			}
+		case "start_with_windows", "run_on_startup":
+			if b, ok := toBool(v); ok {
+				_ = s.db.SetSetting("start_with_windows", strconv.FormatBool(b))
+				autostartChanged = true
+				autostartEnabled = b
+			}
+		case "allow_shell_exec", "allow_shell":
+			if b, ok := toBool(v); ok {
+				_ = s.db.SetSetting("allow_shell_exec", strconv.FormatBool(b))
+			}
+		case "window_mode":
+			if str, ok := v.(string); ok && str != "" {
+				_ = s.db.SetSetting("window_mode", str)
+			}
+		case "git_author_name":
+			if str, ok := v.(string); ok {
+				_ = s.db.SetSetting("git_author_name", str)
+			}
+		case "git_author_email":
+			if str, ok := v.(string); ok {
+				_ = s.db.SetSetting("git_author_email", str)
+			}
+		case "git_default_token", "git_token":
+			if str, ok := v.(string); ok {
+				_ = s.db.SetSetting("git_default_token", str)
+			}
+		case "notify_on_failure":
+			if b, ok := toBool(v); ok {
+				_ = s.db.SetSetting("notify_on_failure", strconv.FormatBool(b))
+			}
+		case "theme_accent":
+			if str, ok := v.(string); ok && str != "" {
+				_ = s.db.SetSetting("theme_accent", str)
+			}
+		case "density":
+			if str, ok := v.(string); ok && str != "" {
+				_ = s.db.SetSetting("density", str)
+			}
+		case "editor_font_size":
+			if sz, ok := toInt(v); ok && sz > 0 {
+				_ = s.db.SetSetting("editor_font_size", strconv.Itoa(sz))
+			}
+		case "language":
+			if str, ok := v.(string); ok && str != "" {
+				_ = s.db.SetSetting("language", str)
+			}
+		}
+	}
+
+	if autostartChanged {
+		if exe, err := os.Executable(); err == nil {
+			_ = SetAutoStart("ActaCron", exe, autostartEnabled)
+		}
+	}
+
+	return s.Get()
+}
+
+func toInt(v interface{}) (int, bool) {
+	switch val := v.(type) {
+	case int:
+		return val, true
+	case int64:
+		return int(val), true
+	case float64:
+		return int(val), true
+	case string:
+		trimmed := strings.TrimSpace(strings.TrimSuffix(val, "px"))
+		if n, err := strconv.Atoi(trimmed); err == nil {
+			return n, true
+		}
+		if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+func toBool(v interface{}) (bool, bool) {
+	switch val := v.(type) {
+	case bool:
+		return val, true
+	case string:
+		b, err := strconv.ParseBool(strings.TrimSpace(val))
+		return b, err == nil
+	}
+	return false, false
 }
 
 func (s *Service) GetEnv() (map[string]string, error) {

@@ -467,16 +467,24 @@ func (h *APIHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, cfg)
 	case "POST":
-		var cfg settings.AppSettings
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		var bodyMap map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&bodyMap); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		if err := h.settingsSvc.Save(&cfg); err != nil {
+		updatedCfg, err := h.settingsSvc.SaveMap(bodyMap)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+		if h.mgr != nil && h.mgr.Runner() != nil {
+			h.mgr.Runner().SetAllowShell(updatedCfg.AllowShellExec)
+			h.mgr.Runner().SetDefaultTimeoutSec(updatedCfg.TimeoutSeconds)
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":   "saved",
+			"settings": updatedCfg,
+		})
 	}
 }
 
