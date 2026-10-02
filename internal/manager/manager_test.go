@@ -376,3 +376,84 @@ function main(params) {
 		t.Fatalf("unexpected require output: %v", output)
 	}
 }
+
+func TestMissingExternalWorkspaceGracefulLoading(t *testing.T) {
+	tmpDir := t.TempDir()
+	packagesDir := filepath.Join(tmpDir, "packages")
+	nonExistentDir := filepath.Join(tmpDir, "deleted_folder")
+	os.MkdirAll(packagesDir, 0755)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("init db failed: %v", err)
+	}
+	defer db.Close()
+
+	// Add external workspace pointing to non-existent dir
+	if err := db.AddExternalWorkspace("missing_ws", nonExistentDir); err != nil {
+		t.Fatalf("add external ws failed: %v", err)
+	}
+
+	runner := engine.New(db, 30, false)
+	mgr := manager.New(packagesDir, runner, db)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("mgr.Reload should not crash on missing external dir: %v", err)
+	}
+
+	pkg := mgr.GetPackage("missing_ws")
+	if pkg == nil {
+		t.Fatalf("expected missing_ws package to still be registered in memory")
+	}
+	if !pkg.IsExternal {
+		t.Fatalf("expected pkg.IsExternal to be true")
+	}
+	if pkg.Status != "missing" {
+		t.Fatalf("expected pkg.Status to be 'missing', got %q", pkg.Status)
+	}
+}
+
+func TestWatcherExternalWorkspaceAddAndRemove(t *testing.T) {
+	tmpDir := t.TempDir()
+	packagesDir := filepath.Join(tmpDir, "packages")
+	extDir1 := filepath.Join(tmpDir, "ext1")
+	extDir2 := filepath.Join(tmpDir, "ext2")
+	os.MkdirAll(packagesDir, 0755)
+	os.MkdirAll(extDir1, 0755)
+	os.MkdirAll(extDir2, 0755)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("init db failed: %v", err)
+	}
+	defer db.Close()
+
+	_ = db.AddExternalWorkspace("ext1", extDir1)
+	_ = db.AddExternalWorkspace("ext2", extDir2)
+
+	runner := engine.New(db, 30, false)
+	mgr := manager.New(packagesDir, runner, db)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("mgr.Reload failed: %v", err)
+	}
+
+	if err := mgr.StartWatcher(); err != nil {
+		t.Fatalf("StartWatcher failed: %v", err)
+	}
+	defer mgr.StopWatcher()
+
+	// Now delete ext2 from DB and Reload
+	_ = db.DeleteExternalWorkspace("ext2")
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload after delete failed: %v", err)
+	}
+
+	// Verify ext2 is removed and ext1 remains
+	if mgr.GetPackage("ext2") != nil {
+		t.Fatalf("expected ext2 to be unlinked")
+	}
+	if mgr.GetPackage("ext1") == nil {
+		t.Fatalf("expected ext1 to still be loaded")
+	}
+}

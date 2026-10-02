@@ -82,6 +82,13 @@ func main() {
 	// Subcommand: actacron headless (Daemon without GUI tray)
 	isHeadless := len(os.Args) > 1 && os.Args[1] == "headless"
 
+	// Start file watcher for live script reloading
+	if err := mgr.StartWatcher(); err != nil {
+		log.Printf("Warning: failed to start file watcher: %v", err)
+	} else {
+		defer mgr.StopWatcher()
+	}
+
 	// 4. Initialize Scheduler & Git Service
 	sched := scheduler.New(mgr, db)
 	sched.Start()

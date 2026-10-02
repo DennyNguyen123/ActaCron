@@ -320,20 +320,21 @@
       const isCollapsed = collapsedPackages.has(pkgName);
       const pkgMeta = packagesInfo[pkgName] || {};
       const isExternal = !!pkgMeta.is_external;
+      const isMissing = pkgMeta.status === "missing";
 
       const groupLi = document.createElement("li");
-      groupLi.className = "tree-package-group" + (isCollapsed ? " collapsed" : "");
+      groupLi.className = "tree-package-group" + (isCollapsed ? " collapsed" : "") + (isMissing ? " package-missing" : "");
 
       const headerDiv = document.createElement("div");
       headerDiv.className = "tree-package-header" + (isShared ? " shared-package" : "");
 
-      const extBadge = isExternal
-        ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; flex-shrink:0;">EXT</span>`
-        : "";
+      const statusBadge = isMissing
+        ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(239,68,68,0.2); color:#ef4444; font-weight:700; flex-shrink:0;">MISSING</span>`
+        : (isExternal ? `<span style="font-size:10px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; flex-shrink:0;">EXT</span>` : "");
 
       const headerTitle = isShared 
         ? `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><span>🔗</span> <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">_shared</strong> <span class="badge-shared-library" style="flex-shrink:0;">LIB</span></div>`
-        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span>${extBadge}</div>`;
+        : `<div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;"><span class="tree-chevron" style="flex-shrink:0;">▾</span><svg style="flex-shrink:0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${pkgName}">${pkgName}</span>${statusBadge}</div>`;
 
       const cfgTooltip = (window.I18n && window.I18n.t("ws_config_tooltip")) || "Workspace Settings & .env";
       const unlinkTooltip = (window.I18n && window.I18n.t("unlink_workspace")) || "Unlink Workspace";
@@ -406,57 +407,71 @@
       const fileUl = document.createElement("ul");
       fileUl.className = "tree-file-list";
 
-      grouped[pkgName].forEach(fn => {
+      if (isMissing) {
         const itemLi = document.createElement("li");
         itemLi.className = "tree-file-item";
-        if (activeScript && activeScript.package === fn.package && (activeScript.file_path === fn.file_path || activeScript.name === fn.name)) {
-          itemLi.classList.add("active");
-        }
-
-        const badges = [];
-        if (fn.is_mcp) badges.push('<span class="badge-mcp-mini">MCP</span>');
-        if (fn.cron_expr) {
-          let badgeType = "badge-cron-mini";
-          let badgeText = "CRON";
-
-          const now = new Date();
-          if (fn.cron_end && new Date(fn.cron_end) < now) {
-            badgeType = "badge-cron-expired";
-            badgeText = "EXPIRED";
-          } else if (fn.max_runs > 0 && fn.run_count >= fn.max_runs) {
-            badgeType = "badge-cron-paused";
-            badgeText = "PAUSED";
-          } else if (fn.is_enabled === false) {
-            badgeType = "badge-cron-paused";
-            badgeText = "PAUSED";
-          } else if (fn.cron_start && new Date(fn.cron_start) > now) {
-            badgeType = "badge-cron-pending";
-            badgeText = "PENDING";
+        itemLi.style.cssText = "font-style:italic; color:#ef4444; cursor:default; padding:4px 12px; font-size:12px;";
+        itemLi.textContent = "Folder missing or disconnected";
+        fileUl.appendChild(itemLi);
+      } else if (!grouped[pkgName] || grouped[pkgName].length === 0) {
+        const itemLi = document.createElement("li");
+        itemLi.className = "tree-file-item";
+        itemLi.style.cssText = "font-style:italic; color:var(--color-muted-foreground); cursor:default; padding:4px 12px; font-size:12px;";
+        itemLi.textContent = "No scripts found";
+        fileUl.appendChild(itemLi);
+      } else {
+        grouped[pkgName].forEach(fn => {
+          const itemLi = document.createElement("li");
+          itemLi.className = "tree-file-item";
+          if (activeScript && activeScript.package === fn.package && (activeScript.file_path === fn.file_path || activeScript.name === fn.name)) {
+            itemLi.classList.add("active");
           }
 
-          badges.push(`<span class="${badgeType}" style="font-size:9px; padding:1px 4px;">${badgeText}</span>`);
-        }
+          const badges = [];
+          if (fn.is_mcp) badges.push('<span class="badge-mcp-mini">MCP</span>');
+          if (fn.cron_expr) {
+            let badgeType = "badge-cron-mini";
+            let badgeText = "CRON";
 
-        itemLi.innerHTML = `
-          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; margin-right:6px;" title="${fn.name}">${fn.name}</span>
-          <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
-            ${badges.join("")}
-            ${!isShared ? `<button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>` : ''}
-          </div>
-        `;
+            const now = new Date();
+            if (fn.cron_end && new Date(fn.cron_end) < now) {
+              badgeType = "badge-cron-expired";
+              badgeText = "EXPIRED";
+            } else if (fn.max_runs > 0 && fn.run_count >= fn.max_runs) {
+              badgeType = "badge-cron-paused";
+              badgeText = "PAUSED";
+            } else if (fn.is_enabled === false) {
+              badgeType = "badge-cron-paused";
+              badgeText = "PAUSED";
+            } else if (fn.cron_start && new Date(fn.cron_start) > now) {
+              badgeType = "badge-cron-pending";
+              badgeText = "PENDING";
+            }
 
-        itemLi.addEventListener("click", () => openScript(fn));
-        const delBtn = itemLi.querySelector(".btn-tree-delete");
-        if (delBtn) {
-          delBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            deleteScript(fn.package, fn.file_path || (fn.name + ".js"), fn.name);
-          });
-        }
-        fileUl.appendChild(itemLi);
-      });
+            badges.push(`<span class="${badgeType}" style="font-size:9px; padding:1px 4px;">${badgeText}</span>`);
+          }
+
+          itemLi.innerHTML = `
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; margin-right:6px;" title="${fn.name}">${fn.name}</span>
+            <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
+              ${badges.join("")}
+              ${!isShared ? `<button class="btn-tree-delete" title="Delete script" data-pkg="${fn.package}" data-name="${fn.name}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>` : ''}
+            </div>
+          `;
+
+          itemLi.addEventListener("click", () => openScript(fn));
+          const delBtn = itemLi.querySelector(".btn-tree-delete");
+          if (delBtn) {
+            delBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              deleteScript(fn.package, fn.file_path || (fn.name + ".js"), fn.name);
+            });
+          }
+          fileUl.appendChild(itemLi);
+        });
+      }
 
       groupLi.appendChild(fileUl);
       tree.appendChild(groupLi);

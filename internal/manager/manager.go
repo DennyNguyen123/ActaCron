@@ -36,6 +36,7 @@ type Manager struct {
 	workspaceEnvs    map[string]map[string]string
 	globalEnvPath    string
 	watcher          *fsnotify.Watcher
+	watchedPaths     map[string]bool
 	stopChan         chan struct{}
 }
 
@@ -49,6 +50,7 @@ func New(packagesDir string, runner *engine.Runner, db *storage.DB) *Manager {
 		fileCode:         make(map[string]string),
 		workspaceConfigs: make(map[string]*domain.WorkspaceConfig),
 		workspaceEnvs:    make(map[string]map[string]string),
+		watchedPaths:     make(map[string]bool),
 		stopChan:         make(chan struct{}),
 	}
 }
@@ -137,23 +139,50 @@ func (m *Manager) Reload() error {
 		m.scanPackageFolder(pkgName, pkgPath, false, isGit, newPackages, newFunctions, newFileCode, newWorkspaceConfigs, newWorkspaceEnvs)
 	}
 
+	currentExternalPaths := make(map[string]bool)
+
 	// Load external workspaces from database
 	if m.db != nil {
 		if extList, err := m.db.ListExternalWorkspaces(); err == nil {
 			for _, extWs := range extList {
-				if fi, err := os.Stat(extWs.Path); err == nil && fi.IsDir() {
-					isGit := false
-					if _, err := os.Stat(filepath.Join(extWs.Path, ".git")); err == nil {
-						isGit = true
+				fi, err := os.Stat(extWs.Path)
+				if err != nil || !fi.IsDir() {
+					// Gracefully register missing external workspace so user can view/unlink it
+					pkgInfo := &domain.PackageInfo{
+						Name:       extWs.Name,
+						Path:       extWs.Path,
+						IsExternal: true,
+						Status:     "missing",
+						Functions:  []string{},
+						UpdatedAt:  time.Now(),
 					}
-					m.scanPackageFolder(extWs.Name, extWs.Path, true, isGit, newPackages, newFunctions, newFileCode, newWorkspaceConfigs, newWorkspaceEnvs)
-					if m.watcher != nil {
-						_ = m.watcher.Add(extWs.Path)
-					}
+					newPackages[extWs.Name] = pkgInfo
+					newWorkspaceConfigs[extWs.Name] = &domain.WorkspaceConfig{Name: extWs.Name}
+					continue
+				}
+
+				isGit := false
+				if _, err := os.Stat(filepath.Join(extWs.Path, ".git")); err == nil {
+					isGit = true
+				}
+				m.scanPackageFolder(extWs.Name, extWs.Path, true, isGit, newPackages, newFunctions, newFileCode, newWorkspaceConfigs, newWorkspaceEnvs)
+				currentExternalPaths[extWs.Path] = true
+				if m.watcher != nil {
+					_ = m.watcher.Add(extWs.Path)
 				}
 			}
 		}
 	}
+
+	// Unwatch any previously watched external paths that are no longer active
+	if m.watcher != nil {
+		for oldPath := range m.watchedPaths {
+			if !currentExternalPaths[oldPath] {
+				_ = m.watcher.Remove(oldPath)
+			}
+		}
+	}
+	m.watchedPaths = currentExternalPaths
 
 	m.packages = newPackages
 	m.functions = newFunctions
@@ -603,21 +632,26 @@ func (m *Manager) StartWatcher() error {
 		return err
 	}
 	m.mu.RLock()
-	for _, pkg := range m.packages {
-		if pkg.IsExternal && pkg.Path != "" {
-			_ = watcher.Add(pkg.Path)
-		}
+	for path := range m.watchedPaths {
+		_ = watcher.Add(path)
 	}
 	m.mu.RUnlock()
 	return nil
 }
 
 func (m *Manager) StopWatcher() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.stopChan != nil {
-		close(m.stopChan)
+		select {
+		case <-m.stopChan:
+		default:
+			close(m.stopChan)
+		}
 	}
 	if m.watcher != nil {
-		m.watcher.Close()
+		_ = m.watcher.Close()
+		m.watcher = nil
 	}
 }
 
