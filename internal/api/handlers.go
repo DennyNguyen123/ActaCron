@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"actacron/internal/domain"
@@ -329,8 +330,12 @@ func (h *APIHandler) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 
 	targetDir := h.mgr.PackagesDir()
 	if req.Package != "" {
-		cleanPkg := filepath.Base(req.Package)
-		targetDir = filepath.Join(targetDir, cleanPkg)
+		if pkgDir, err := h.mgr.GetPackageDir(req.Package); err == nil {
+			targetDir = pkgDir
+		} else {
+			cleanPkg := filepath.Base(req.Package)
+			targetDir = filepath.Join(targetDir, cleanPkg)
+		}
 	}
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -719,4 +724,83 @@ func (h *APIHandler) handleApplyUpdate(w http.ResponseWriter, r *http.Request) {
 		_ = cmd.Start()
 		os.Exit(0)
 	}()
+}
+
+func (h *APIHandler) handlePickFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	selectedPath, err := tray.PickFolder()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to open folder picker: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": selectedPath})
+}
+
+func (h *APIHandler) handleExternalWorkspace(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if h.db == nil {
+			writeJSON(w, http.StatusOK, []interface{}{})
+			return
+		}
+		list, err := h.db.ListExternalWorkspaces()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if list == nil {
+			list = []domain.ExternalWorkspace{}
+		}
+		writeJSON(w, http.StatusOK, list)
+
+	case http.MethodPost:
+		var req struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		req.Name = strings.TrimSpace(req.Name)
+		req.Path = strings.TrimSpace(req.Path)
+		if req.Name == "" || req.Path == "" {
+			writeError(w, http.StatusBadRequest, "name and path are required")
+			return
+		}
+		stat, err := os.Stat(req.Path)
+		if err != nil || !stat.IsDir() {
+			writeError(w, http.StatusBadRequest, "specified path does not exist or is not a directory")
+			return
+		}
+		if h.db != nil {
+			if err := h.db.AddExternalWorkspace(req.Name, req.Path); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save external workspace: "+err.Error())
+				return
+			}
+		}
+		_ = h.mgr.Reload()
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "name": req.Name, "path": req.Path})
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "name parameter is required")
+			return
+		}
+		if h.db != nil {
+			if err := h.db.DeleteExternalWorkspace(name); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to delete external workspace: "+err.Error())
+				return
+			}
+		}
+		_ = h.mgr.Reload()
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "name": name})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }

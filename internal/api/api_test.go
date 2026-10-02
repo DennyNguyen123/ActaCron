@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -316,6 +317,71 @@ func TestSettingsSaveAndPartialUpdate(t *testing.T) {
 	}
 	if data["allow_shell_exec"] != true && data["allow_shell"] != true {
 		t.Errorf("general setting allow_shell_exec was wiped out by UI update! got %+v", data)
+	}
+}
+
+func TestExternalWorkspaceAPI(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test_api_ext.db")
+	db, err := storage.New(dbFile)
+	if err != nil {
+		t.Fatalf("failed db: %v", err)
+	}
+	defer db.Close()
+
+	runner := engine.New(db, 10, false)
+	mgr := manager.New(tmpDir, runner, db)
+	sched := scheduler.New(mgr, db)
+	gitSvc := gitmgr.New()
+	settingsSvc := settings.New(db, filepath.Join(tmpDir, ".env"))
+
+	router := api.NewRouter(mgr, sched, db, gitSvc, settingsSvc, nil)
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	tmpExtDir := t.TempDir()
+
+	// 1. POST /api/workspace/external
+	payload := fmt.Sprintf(`{"name":"ext_project","path":%q}`, tmpExtDir)
+	resp, err := http.Post(ts.URL+"/api/workspace/external", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatalf("POST /api/workspace/external failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// 2. GET /api/workspace/external
+	resp, err = http.Get(ts.URL + "/api/workspace/external")
+	if err != nil {
+		t.Fatalf("GET /api/workspace/external failed: %v", err)
+	}
+	var extList []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&extList)
+	if len(extList) != 1 || extList[0]["name"] != "ext_project" {
+		t.Fatalf("unexpected extList: %v", extList)
+	}
+
+	// Verify manager loaded it
+	if mgr.GetPackage("ext_project") == nil {
+		t.Fatalf("manager did not load external package")
+	}
+
+	// 3. DELETE /api/workspace/external?name=ext_project
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/workspace/external?name=ext_project", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("DELETE /api/workspace/external failed: status=%d, err=%v", resp.StatusCode, err)
+	}
+
+	// Verify manager unloaded it
+	if mgr.GetPackage("ext_project") != nil {
+		t.Fatalf("manager did not unload deleted external package")
+	}
+
+	// Verify external directory still exists on disk (NEVER DELETED)
+	if _, err := os.Stat(tmpExtDir); os.IsNotExist(err) {
+		t.Fatalf("CRITICAL: external directory was deleted on disk!")
 	}
 }
 

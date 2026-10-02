@@ -47,6 +47,8 @@ func NewRouter(
 	mux.HandleFunc("/api/functions/delete", handler.handleDeleteFunction)
 	mux.HandleFunc("/api/workspace/open", handler.handleOpenFolder)
 	mux.HandleFunc("/api/workspace/config", handler.handleWorkspaceConfig)
+	mux.HandleFunc("/api/workspace/pick-folder", handler.handlePickFolder)
+	mux.HandleFunc("/api/workspace/external", handler.handleExternalWorkspace)
 	mux.HandleFunc("/api/run", handler.handleRunFunction)
 
 	mux.HandleFunc("/api/cron", handler.handleCron)
